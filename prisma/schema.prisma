@@ -1,0 +1,153 @@
+// Runway — job application command center
+// Postgres (Vercel Postgres / Neon) is the system of record from day one.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+// Prisma 7: the connection URL lives in prisma.config.ts (for the CLI) and is
+// passed to PrismaClient via the pg driver adapter (see src/lib/prisma.ts).
+datasource db {
+  provider = "postgresql"
+}
+
+/// Status of a job application. Ordered roughly by funnel position.
+enum JobStatus {
+  saved
+  tailoring
+  applied
+  interviewing
+  offer
+  rejected
+  withdrawn
+}
+
+enum DocumentType {
+  resume
+  coverLetter
+}
+
+/// A base resume, tagged by role type (e.g. "FP&A", "Product Manager").
+/// Tailoring never mutates this — it always writes a new TailoredDocument.
+model Resume {
+  id     String @id @default(cuid())
+  /// No auth in v1; every row carries a userId so auth can be added later
+  /// without a schema rewrite.
+  userId String @default("local")
+
+  name String
+
+  /// ResumeContent: { contact, summary, experience[], extracurricular[], skills[], education[] }
+  baseContent Json
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  jobs Job[]
+
+  @@index([userId])
+}
+
+/// A single job application, tracked end to end.
+model Job {
+  id     String @id @default(cuid())
+  userId String @default("local")
+
+  company        String
+  title          String
+  url            String?
+  rawDescription String  @db.Text
+
+  /// ParsedRequirements: { skills[], keywords[], seniority }
+  parsedRequirements Json?
+
+  status JobStatus @default(saved)
+
+  appliedDate  DateTime?
+  followUpDate DateTime?
+  notes        String?   @db.Text
+
+  /// Which base resume this application is anchored to.
+  resumeVersionId String?
+  resumeVersion   Resume? @relation(fields: [resumeVersionId], references: [id], onDelete: SetNull)
+
+  /// 0-100, persisted so the board and analytics never recompute.
+  matchScore Int?
+
+  /// ScoreDetail: { matchedKeywords[], missingKeywords[], summary, scoredAt }
+  scoreDetail Json?
+
+  /// Bumped on every status transition — drives the stale-follow-up flag.
+  statusChangedAt DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  documents     TailoredDocument[]
+  interviewPrep InterviewPrep?
+
+  @@index([userId, status])
+  @@index([resumeVersionId])
+}
+
+/// A generated artifact for one job. Never overwrites a base resume, and every
+/// past version stays retrievable.
+model TailoredDocument {
+  id    String @id @default(cuid())
+  jobId String
+  job   Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  type DocumentType
+
+  /// Cover letters carry a style label: "concise" | "narrative" | "enthusiastic".
+  label String?
+
+  /// ResumeContent for type=resume, CoverLetterContent for type=coverLetter.
+  content Json
+
+  /// Vercel Blob URL — past exports stay downloadable without regenerating.
+  pdfBlobUrl String?
+
+  /// Portfolio project woven into this document, if any.
+  portfolioId String?
+  portfolio   Portfolio? @relation(fields: [portfolioId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([jobId, type])
+}
+
+/// Side projects Claude can reference in a cover letter or tailored resume.
+model Portfolio {
+  id     String @id @default(cuid())
+  userId String @default("local")
+
+  name        String
+  description String   @db.Text
+  techStack   String[]
+  link        String?
+  /// Used to auto-pick the single most relevant project for a given posting.
+  relevantSkills String[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  documents TailoredDocument[]
+
+  @@index([userId])
+}
+
+/// Generated interview prep, one row per job, revisitable later.
+model InterviewPrep {
+  id    String @id @default(cuid())
+  jobId String @unique
+  job   Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  /// InterviewQuestion[]: { question, category, suggestedApproach }
+  questions Json
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
