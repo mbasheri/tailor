@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { prisma, CURRENT_USER_ID } from "@/lib/prisma";
 import { toJobDTO } from "@/lib/serialize";
-import { Board } from "@/components/board/Board";
+import { JobsTable } from "@/components/JobsTable";
 import { EmptyState } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 
-export default async function BoardPage() {
+export default async function JobsPage() {
   const jobs = await prisma.job.findMany({
     where: { userId: CURRENT_USER_ID },
     orderBy: { updatedAt: "desc" },
@@ -16,35 +16,34 @@ export default async function BoardPage() {
       interviewPrep: { select: { id: true } },
     },
   });
-
   const dto = jobs.map(toJobDTO);
 
   return (
     <div className="space-y-5">
       <div className="flex items-end justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Board</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Jobs</h1>
           <p className="text-text-muted text-sm mt-0.5">
-            Drag cards between columns — every move saves instantly.
+            {dto.length} {dto.length === 1 ? "application" : "applications"} tracked.
           </p>
         </div>
-        <Link href="/jobs" className="btn btn-ghost text-sm">
-          Table view →
+        <Link href="/" className="btn btn-ghost text-sm">
+          ← Board view
         </Link>
       </div>
 
       {dto.length === 0 ? (
         <EmptyState
           title="No jobs yet"
-          hint="Add your first posting — paste a description or drop in a URL — and Runway will score it against your resumes."
+          hint="Add your first posting to start tracking."
           action={
             <Link href="/jobs/new" className="btn btn-primary">
-              + Add your first job
+              + Add job
             </Link>
           }
         />
       ) : (
-        <Board initialJobs={dto} />
+        <JobsTable jobs={dto} />
       )}
     </div>
   );
