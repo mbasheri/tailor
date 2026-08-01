@@ -14,9 +14,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Runway — Job Application Command Center",
+  title: "Runway — Resume Tailor",
   description:
-    "Prep applications fast and keep the whole job search in one place.",
+    "Paste a job posting and your resume; get a tailored, ATS-safe PDF. Nothing saved.",
 };
 
 export default function RootLayout({
@@ -31,7 +31,7 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         <NavBar />
-        <main className="flex-1 w-full max-w-[1400px] mx-auto px-4 sm:px-6 py-6">
+        <main className="flex-1 w-full max-w-[1000px] mx-auto px-4 sm:px-6 py-6">
           {children}
         </main>
       </body>

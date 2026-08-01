@@ -1,51 +1,20 @@
-import Link from "next/link";
-import { prisma, CURRENT_USER_ID } from "@/lib/prisma";
-import { toJobDTO } from "@/lib/serialize";
-import { Board } from "@/components/board/Board";
-import { EmptyState } from "@/components/ui";
+import { TailorApp } from "@/components/TailorApp";
 
-export const dynamic = "force-dynamic";
-
-export default async function BoardPage() {
-  const jobs = await prisma.job.findMany({
-    where: { userId: CURRENT_USER_ID },
-    orderBy: { updatedAt: "desc" },
-    include: {
-      resumeVersion: { select: { id: true, name: true } },
-      _count: { select: { documents: true } },
-      interviewPrep: { select: { id: true } },
-    },
-  });
-
-  const dto = jobs.map(toJobDTO);
-
+export default function Home() {
   return (
-    <div className="space-y-5">
-      <div className="flex items-end justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Board</h1>
-          <p className="text-text-muted text-sm mt-0.5">
-            Drag cards between columns — every move saves instantly.
-          </p>
-        </div>
-        <Link href="/jobs" className="btn btn-ghost text-sm">
-          Table view →
-        </Link>
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          Tailor your resume to a job
+        </h1>
+        <p className="text-text-muted text-sm mt-1 max-w-2xl">
+          Paste a posting and your resume. Runway reads the role, applies the
+          resume conventions for that kind of job, and rewrites yours to match —
+          using only what&apos;s already in it. Review, edit, export a PDF.
+          Nothing is saved; each visit is a fresh session.
+        </p>
       </div>
-
-      {dto.length === 0 ? (
-        <EmptyState
-          title="No jobs yet"
-          hint="Add your first posting — paste a description or drop in a URL — and Runway will score it against your resumes."
-          action={
-            <Link href="/jobs/new" className="btn btn-primary">
-              + Add your first job
-            </Link>
-          }
-        />
-      ) : (
-        <Board initialJobs={dto} />
-      )}
+      <TailorApp />
     </div>
   );
 }

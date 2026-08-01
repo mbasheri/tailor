@@ -1,103 +1,76 @@
-# Runway — Job Application Command Center
+# Runway — Resume Tailor
 
-A personal system of record for a job search. Runway helps you prep applications
-fast — scoring, tailoring, cover letters, interview prep — while **you** review
-and submit every application yourself. It is not an auto-apply bot, and it never
-sends anything anywhere.
+A single-page, stateless tool: paste a job posting and your resume, and Runway
+reads the role, applies the resume conventions for that kind of job, and
+rewrites yours to match — using only what's actually in your resume, never
+inventing experience. Review, edit, export a one-page ATS-safe PDF.
 
-Everything persists server-side in Postgres from day one: resumes, tailored
-documents, job history, analytics. Refreshing the page or coming back tomorrow
-shows the same state.
+**Nothing is stored.** No accounts, no login, no database. Each visit is a fresh
+session: upload your resume, get one tailored result, download it, done.
+
+## How it works
+
+```
+1 · Job posting   paste text  OR  paste a URL → best-effort auto-pull
+2 · Your resume   upload a PDF (text extracted locally)  OR  paste text
+   → Tailor       Gemini classifies the role, applies its conventions,
+                  and rewrites your resume from your real content only
+   → Review/edit  see the detected role + what changed, edit anything
+   → Export PDF   single-page, ATS-safe, streamed straight to download
+```
+
+### Privacy: contact info never leaves your machine
+
+Before anything is sent to the model, your **name, email, phone, and profile
+links are stripped locally** (`src/lib/contact.ts`) and replaced with
+placeholders. Gemini only ever sees your experience, skills, and education. The
+real contact block is re-attached locally afterward and rendered into the PDF.
+
+### Anti-fabrication
+
+The model is instructed to only rephrase, reorder, and select from your real
+content — never to invent employers, metrics, tools, or responsibilities. Its
+JSON output is validated with Zod before anything is rendered, and you review
+and edit the result before exporting.
 
 ## Stack
 
 - **Next.js 16** (App Router) + TypeScript, Tailwind CSS v4
-- **Postgres** (Vercel Postgres / Neon) via **Prisma 7** (pg driver adapter)
-- **Vercel Blob** for generated PDF storage
-- **Anthropic Claude** for all AI features, behind server-only routes
-- **@react-pdf/renderer** for ATS-safe PDF export, **recharts** for analytics
+- **Google Gemini** (`gemini-flash-latest`) via `@google/genai`, structured output
+- **unpdf** for serverless-safe PDF text extraction
+- **cheerio** for best-effort job-posting URL extraction
+- **@react-pdf/renderer** for the ATS-safe single-page PDF
 
-## Features
+No database, no file storage — every route is stateless.
 
-| # | Feature | Where |
-|---|---------|-------|
-| 1 | Resume ↔ JD match scoring (0–100, matched/missing keywords, fit summary) | Job page → **Score match** |
-| 2 | Kanban board + table view, 10-business-day follow-up flag | `/` and `/jobs` |
-| 3 | Best-effort job-description auto-pull from a URL, with manual paste fallback | `/jobs/new` |
-| 4 | Multiple base resume versions; AI suggests the best-fit; tailoring never overwrites a base | `/resumes`, Job page |
-| 5 | 2–3 cover-letter style variants, editable, saved per job | Job page → **Cover letters** |
-| 6 | 8–10 interview questions mapped to your real experience | Job page → **Interview prep** |
-| 7 | Portfolio library; one most-relevant project auto-woven into documents | `/portfolio` |
-| 8 | Analytics: response/interview rates, days-to-response, per-resume-version funnel | `/analytics` |
+## Routes
 
-### Anti-fabrication guarantee
-
-Every tailoring / cover-letter / interview prompt includes your full base resume
-as ground truth and instructs Claude to **only rephrase, reorder, and select
-from what you actually wrote** — never to invent employers, metrics, tools, or
-responsibilities. All Claude calls return structured JSON that is validated with
-Zod before anything is saved.
+| Route | Does |
+|---|---|
+| `POST /api/fetch-job` | URL → clean job-description text, graceful fallback to manual paste |
+| `POST /api/parse-resume` | uploaded PDF → plain text (in-memory, nothing stored) |
+| `POST /api/tailor` | `{ jobText, resumeText }` → `{ roleType, conventions[], content, changeNotes[] }` |
+| `POST /api/export-pdf` | `{ content }` → streams a one-page PDF |
 
 ## Local setup
 
-1. **Install** (also generates the Prisma client):
+```bash
+npm install
+cp .env.example .env      # add your GEMINI_API_KEY
+npm run dev
+```
 
-   ```bash
-   npm install
-   ```
-
-2. **Environment** — copy the template and fill it in:
-
-   ```bash
-   cp .env.example .env
-   ```
-
-   | Var | Where to get it |
-   |-----|-----------------|
-   | `DATABASE_URL` | Vercel Postgres / Neon connection string (pooled) |
-   | `ANTHROPIC_API_KEY` | https://console.anthropic.com/settings/keys |
-   | `BLOB_READ_WRITE_TOKEN` | Vercel → Storage → Blob → connect project (optional locally) |
-
-   Without `BLOB_READ_WRITE_TOKEN`, PDF export still works — it streams the file
-   straight to your browser instead of persisting a Blob URL.
-
-3. **Migrate + seed** the database:
-
-   ```bash
-   npm run db:migrate      # applies prisma/migrations to your DB
-   npm run db:seed         # seeds two base resumes + a portfolio project
-   ```
-
-4. **Run**:
-
-   ```bash
-   npm run dev
-   ```
+Get a free key from [Google AI Studio](https://aistudio.google.com/apikey).
+Only one env var is required: `GEMINI_API_KEY` (optionally `GEMINI_MODEL`).
 
 ## Deploy to Vercel
 
-1. Push this repo and import it into Vercel.
-2. Add environment variables in **Project Settings → Environment Variables**:
-   `DATABASE_URL`, `ANTHROPIC_API_KEY`, `BLOB_READ_WRITE_TOKEN`. Never commit them.
-3. The build command runs migrations automatically:
+1. Push the repo and import it into Vercel.
+2. Add `GEMINI_API_KEY` in **Project Settings → Environment Variables**.
+3. Deploy. The tailor/parse/export routes run on Vercel's Node runtime with a
+   raised `maxDuration`; no database or storage to provision.
 
-   ```
-   prisma generate && prisma migrate deploy && next build
-   ```
+## Non-goals
 
-   This is wired as the `vercel-build` script, which Vercel prefers over `build`.
-4. Seed the production database once (from your machine, with the production
-   `DATABASE_URL` exported): `npm run db:seed`.
-
-## Data model
-
-`Resume` · `Job` · `TailoredDocument` · `Portfolio` · `InterviewPrep` — each row
-carries a `userId` (defaulting to `"local"`) so real auth can be added later
-without a schema rewrite. Tailored resumes and cover letters are always **new**
-`TailoredDocument` rows linked to a job, so the base library stays clean and
-every past version stays retrievable.
-
-## Explicit non-goals
-
-No automatic form-filling or submission to job boards. No storing of job-site
-credentials. No scraping behind authentication walls or bypassing bot detection.
+No auto-apply, no form-filling, no job-board submission, no stored credentials,
+and no scraping behind login walls or bot detection.

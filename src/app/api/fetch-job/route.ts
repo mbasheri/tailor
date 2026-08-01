@@ -1,8 +1,9 @@
-import { z } from "zod";
 import * as cheerio from "cheerio";
 import { ok, parseBody, route } from "@/lib/api";
+import { fetchJobRequestSchema as bodySchema } from "@/lib/schemas";
 
-const bodySchema = z.object({ url: z.string().url("Enter a valid URL") });
+export const runtime = "nodejs";
+export const maxDuration = 20;
 
 /**
  * Best-effort server-side extraction of a job description. Many boards

@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { ZodError, type z } from "zod";
-import { ClaudeError } from "@/lib/claude";
 
 /** Consistent JSON success envelope. */
 export function ok<T>(data: T, init?: number | ResponseInit) {
@@ -26,7 +25,7 @@ export async function route<T>(
     if (error instanceof ZodError) {
       return fail("Validation failed", 422, error.flatten());
     }
-    if (error instanceof ClaudeError) {
+    if (error instanceof AIError) {
       return fail(error.message, error.status);
     }
     if (error instanceof HttpError) {
@@ -46,6 +45,17 @@ export class HttpError extends Error {
     readonly status = 400,
   ) {
     super(message);
+  }
+}
+
+/** Raised by the Gemini gateway when a model call fails or won't validate. */
+export class AIError extends Error {
+  constructor(
+    message: string,
+    readonly status = 502,
+  ) {
+    super(message);
+    this.name = "AIError";
   }
 }
 

@@ -6,7 +6,7 @@ import {
   StyleSheet,
   renderToBuffer,
 } from "@react-pdf/renderer";
-import type { CoverLetterContent, ResumeContent } from "@/lib/schemas";
+import type { ResumeContent } from "@/lib/schemas";
 
 /**
  * ATS-safe, single-column, black-on-white layouts. No photos, standard fonts
@@ -16,42 +16,40 @@ import type { CoverLetterContent, ResumeContent } from "@/lib/schemas";
 
 const styles = StyleSheet.create({
   page: {
-    paddingTop: 36,
-    paddingBottom: 36,
-    paddingHorizontal: 44,
+    paddingTop: 30,
+    paddingBottom: 28,
+    paddingHorizontal: 40,
     fontFamily: "Helvetica",
-    fontSize: 9.5,
+    fontSize: 9,
     color: "#111111",
-    lineHeight: 1.35,
+    lineHeight: 1.28,
   },
-  name: { fontSize: 18, fontFamily: "Helvetica-Bold", marginBottom: 2 },
-  contactLine: { fontSize: 8.5, color: "#333333", marginBottom: 10 },
+  name: { fontSize: 16, fontFamily: "Helvetica-Bold", marginBottom: 1 },
+  contactLine: { fontSize: 8.2, color: "#333333", marginBottom: 7 },
   sectionTitle: {
-    fontSize: 10,
+    fontSize: 9.5,
     fontFamily: "Helvetica-Bold",
     textTransform: "uppercase",
-    letterSpacing: 0.6,
+    letterSpacing: 0.5,
     borderBottom: "0.75pt solid #000000",
-    paddingBottom: 2,
-    marginTop: 12,
-    marginBottom: 5,
+    paddingBottom: 1.5,
+    marginTop: 8,
+    marginBottom: 3.5,
   },
-  summary: { marginBottom: 2 },
-  entry: { marginBottom: 6 },
+  summary: { marginBottom: 1 },
+  entry: { marginBottom: 4.5 },
   entryHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
   },
   entryTitle: { fontFamily: "Helvetica-Bold" },
   entryOrg: { fontFamily: "Helvetica-Oblique" },
-  entryDates: { fontSize: 8.5, color: "#333333" },
-  bulletRow: { flexDirection: "row", marginTop: 1.5, paddingRight: 6 },
-  bulletDot: { width: 9, fontSize: 9.5 },
+  entryDates: { fontSize: 8.2, color: "#333333" },
+  bulletRow: { flexDirection: "row", marginTop: 1, paddingRight: 6 },
+  bulletDot: { width: 9, fontSize: 9 },
   bulletText: { flex: 1 },
-  skillRow: { flexDirection: "row", marginTop: 1.5 },
+  skillRow: { flexDirection: "row", marginTop: 1 },
   skillCategory: { fontFamily: "Helvetica-Bold", marginRight: 4 },
-  // Cover letter
-  clParagraph: { marginBottom: 8 },
 });
 
 function Bullet({ children }: { children: string }) {
@@ -174,63 +172,10 @@ export function ResumePdf({ content }: { content: ResumeContent }) {
   );
 }
 
-export function CoverLetterPdf({
-  content,
-  candidateName,
-  company,
-  jobTitle,
-}: {
-  content: CoverLetterContent;
-  candidateName: string;
-  company: string;
-  jobTitle: string;
-}) {
-  return (
-    <Document
-      title={`${candidateName} — Cover Letter (${company})`}
-      author={candidateName}
-      creator="Runway"
-      producer="Runway"
-    >
-      <Page size="LETTER" style={styles.page}>
-        <Text style={styles.name}>{candidateName}</Text>
-        <Text style={styles.contactLine}>
-          Application for {jobTitle} — {company}
-        </Text>
-
-        <Text style={styles.clParagraph}>{content.greeting}</Text>
-        {content.paragraphs.map((p, i) => (
-          <Text key={i} style={styles.clParagraph}>
-            {p}
-          </Text>
-        ))}
-        <Text style={styles.clParagraph}>{content.closing}</Text>
-        <Text>{content.signature}</Text>
-      </Page>
-    </Document>
-  );
-}
-
 /* -------------------------------------------------------------------------- */
-/* Render helpers — called from the (non-JSX) route handler                   */
+/* Render helper — called from the (non-JSX) route handler                    */
 /* -------------------------------------------------------------------------- */
 
 export function renderResumePdf(content: ResumeContent): Promise<Buffer> {
   return renderToBuffer(<ResumePdf content={content} />);
-}
-
-export function renderCoverLetterPdf(args: {
-  content: CoverLetterContent;
-  candidateName: string;
-  company: string;
-  jobTitle: string;
-}): Promise<Buffer> {
-  return renderToBuffer(
-    <CoverLetterPdf
-      content={args.content}
-      candidateName={args.candidateName}
-      company={args.company}
-      jobTitle={args.jobTitle}
-    />,
-  );
 }
