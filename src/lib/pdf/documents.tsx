@@ -76,8 +76,8 @@ export function ResumePdf({ content }: { content: ResumeContent }) {
     <Document
       title={`${c.name} — Resume`}
       author={c.name}
-      creator="Runway"
-      producer="Runway"
+      creator="Lyze"
+      producer="Lyze"
     >
       <Page size="LETTER" style={styles.page}>
         <Text style={styles.name}>{c.name}</Text>

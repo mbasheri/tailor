@@ -1,6 +1,6 @@
-# Runway — Resume Tailor
+# Lyze — Resume Tailor
 
-A single-page, stateless tool: paste a job posting and your resume, and Runway
+A single-page, stateless tool: paste a job posting and your resume, and Lyze
 reads the role, applies the resume conventions for that kind of job, and
 rewrites yours to match — using only what's actually in your resume, never
 inventing experience. Review, edit, export a one-page ATS-safe PDF.

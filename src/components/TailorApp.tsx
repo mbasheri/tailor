@@ -289,11 +289,11 @@ export function TailorApp() {
           )}
         </button>
         {!canTailor ? (
-          <span className="text-text-dim text-sm">
+          <span className="text-text-muted text-sm">
             Add both a job posting and your resume to continue.
           </span>
         ) : null}
-        <span className="text-text-dim text-xs ml-auto">
+        <span className="text-text-muted text-xs ml-auto inline-flex items-center gap-1">
           🔒 Name, email, phone &amp; profile links are never sent to the model.
         </span>
       </div>
@@ -391,7 +391,7 @@ function Toggle<T extends string>({
           onClick={() => onChange(val)}
           className={`px-2.5 py-1 transition-colors ${
             value === val
-              ? "bg-accent text-[#04121f] font-medium"
+              ? "bg-accent text-white font-medium"
               : "text-text-muted hover:text-text"
           }`}
         >

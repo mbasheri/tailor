@@ -371,7 +371,7 @@ function EntryCard({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-lg border bg-bg p-3 space-y-2 relative">
+    <div className="rounded-xl border bg-bg-elevated p-3 space-y-2 relative">
       <button
         type="button"
         onClick={onRemove}

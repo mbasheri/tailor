@@ -1,29 +1,52 @@
 @import "tailwindcss";
 
 /*
- * Runway commits to a single dark "command center" theme for consistency —
- * the app is a system of record, not a marketing page. Tokens below are the
- * whole palette; components reference them rather than raw hex.
+ * Lyze — warm gradient theme. The entire palette is defined here once as CSS
+ * variables and exposed to Tailwind via @theme, so components reference tokens
+ * (bg-bg-raised, text-text-muted, text-accent, …) and never hardcode colors.
+ * The gradient hero lives on <body>; content sits in white cards on top of it.
  */
 
 :root {
-  --bg: #0b0f14;
-  --bg-raised: #121821;
-  --bg-elevated: #172130;
-  --border: #253141;
-  --border-strong: #33455a;
-  --text: #e6edf3;
-  --text-muted: #9aa7b4;
-  --text-dim: #6b7986;
-  --accent: #4f8cff;
-  --accent-soft: #1b2a44;
-  --good: #3fb950;
-  --good-soft: #12331c;
-  --warn: #d29922;
-  --warn-soft: #3a2e0f;
-  --bad: #f0603a;
-  --bad-soft: #3a1a12;
-  --radius: 12px;
+  /* Gradient stops: pastel yellow → pink → purple */
+  --grad-yellow: #fdeeb8;
+  --grad-pink: #fbd0e4;
+  --grad-purple: #e3d4fb;
+  --grad-base: #fefcf7;
+
+  /* Surfaces */
+  --bg: #ffffff;
+  --bg-raised: #ffffff;
+  --bg-elevated: #f6f2fb;
+
+  /* Borders */
+  --border: #ece7f4;
+  --border-strong: #ddd4ec;
+
+  /* Text */
+  --text: #1c1626;
+  --text-muted: #625a72;
+  --text-dim: #948da3;
+
+  /* Accent — purple primary, pink pulled from the gradient */
+  --accent: #7c3aed;
+  --accent-hover: #6d28d9;
+  --accent-contrast: #ffffff;
+  --accent-soft: #f1eafe;
+  --pink: #db2777;
+  --pink-soft: #fce7f2;
+
+  /* Semantic */
+  --good: #15803d;
+  --good-soft: #dcfce7;
+  --warn: #b45309;
+  --warn-soft: #fdf0d5;
+  --bad: #dc2626;
+  --bad-soft: #fde4e4;
+
+  --radius: 16px;
+  --shadow-card: 0 1px 2px rgba(28, 22, 38, 0.04),
+    0 12px 32px -16px rgba(124, 58, 237, 0.28);
 }
 
 @theme inline {
@@ -37,14 +60,16 @@
   --color-text-dim: var(--text-dim);
   --color-accent: var(--accent);
   --color-accent-soft: var(--accent-soft);
+  --color-pink: var(--pink);
+  --color-pink-soft: var(--pink-soft);
   --color-good: var(--good);
   --color-good-soft: var(--good-soft);
   --color-warn: var(--warn);
   --color-warn-soft: var(--warn-soft);
   --color-bad: var(--bad);
   --color-bad-soft: var(--bad-soft);
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --font-sans: var(--font-sans-var), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-mono-var), ui-monospace, monospace;
 }
 
 * {
@@ -52,21 +77,40 @@
 }
 
 html {
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 body {
-  background: var(--bg);
   color: var(--text);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  /* The single gradient hero: soft radial blooms over a warm base wash. */
+  background-color: var(--grad-base);
+  background-image:
+    radial-gradient(
+      1100px 620px at 12% -8%,
+      var(--grad-yellow) 0%,
+      transparent 55%
+    ),
+    radial-gradient(
+      1000px 680px at 92% 4%,
+      var(--grad-pink) 0%,
+      transparent 55%
+    ),
+    radial-gradient(
+      1200px 820px at 50% 118%,
+      var(--grad-purple) 0%,
+      transparent 60%
+    );
+  background-attachment: fixed;
+  background-repeat: no-repeat;
 }
 
 ::selection {
-  background: color-mix(in srgb, var(--accent) 35%, transparent);
+  background: color-mix(in srgb, var(--accent) 26%, transparent);
 }
 
-/* Thin, dark scrollbars that fit the theme. */
+/* Light, subtle scrollbars. */
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--border-strong) transparent;
@@ -78,7 +122,8 @@ body {
 *::-webkit-scrollbar-thumb {
   background: var(--border-strong);
   border-radius: 999px;
-  border: 2px solid var(--bg);
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 
 @layer components {
@@ -86,6 +131,7 @@ body {
     background: var(--bg-raised);
     border: 1px solid var(--border);
     border-radius: var(--radius);
+    box-shadow: var(--shadow-card);
   }
   .btn {
     display: inline-flex;
@@ -94,19 +140,25 @@ body {
     gap: 0.4rem;
     font-weight: 500;
     font-size: 0.875rem;
-    padding: 0.5rem 0.85rem;
-    border-radius: 9px;
+    padding: 0.55rem 0.95rem;
+    border-radius: 11px;
     border: 1px solid var(--border-strong);
-    background: var(--bg-elevated);
+    background: #ffffff;
     color: var(--text);
     cursor: pointer;
     transition:
       background 0.15s ease,
       border-color 0.15s ease,
-      opacity 0.15s ease;
+      box-shadow 0.15s ease,
+      opacity 0.15s ease,
+      transform 0.05s ease;
   }
   .btn:hover {
     border-color: var(--accent);
+    color: var(--accent);
+  }
+  .btn:active {
+    transform: translateY(1px);
   }
   .btn:disabled {
     opacity: 0.5;
@@ -115,11 +167,14 @@ body {
   .btn-primary {
     background: var(--accent);
     border-color: var(--accent);
-    color: #04121f;
+    color: var(--accent-contrast);
     font-weight: 600;
+    box-shadow: 0 8px 20px -10px rgba(124, 58, 237, 0.7);
   }
   .btn-primary:hover {
-    background: color-mix(in srgb, var(--accent) 88%, white);
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+    color: var(--accent-contrast);
   }
   .btn-danger:hover {
     border-color: var(--bad);
@@ -128,22 +183,28 @@ body {
   .btn-ghost {
     background: transparent;
     border-color: transparent;
+    box-shadow: none;
   }
   .btn-ghost:hover {
     background: var(--bg-elevated);
     border-color: var(--border);
+    color: var(--text);
   }
   .input,
   .textarea,
   .select {
     width: 100%;
-    background: var(--bg);
+    background: #ffffff;
     border: 1px solid var(--border-strong);
-    border-radius: 9px;
-    padding: 0.5rem 0.65rem;
+    border-radius: 11px;
+    padding: 0.55rem 0.7rem;
     color: var(--text);
     font-size: 0.875rem;
     font-family: inherit;
+  }
+  .input::placeholder,
+  .textarea::placeholder {
+    color: var(--text-dim);
   }
   .input:focus,
   .textarea:focus,
@@ -154,10 +215,10 @@ body {
   }
   .label {
     display: block;
-    font-size: 0.75rem;
+    font-size: 0.72rem;
     font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.05em;
     color: var(--text-muted);
     margin-bottom: 0.3rem;
   }
@@ -166,7 +227,7 @@ body {
     align-items: center;
     gap: 0.25rem;
     font-size: 0.75rem;
-    padding: 0.15rem 0.55rem;
+    padding: 0.2rem 0.6rem;
     border-radius: 999px;
     border: 1px solid var(--border-strong);
     background: var(--bg-elevated);
