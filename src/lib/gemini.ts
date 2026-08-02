@@ -45,7 +45,7 @@ YOUR JOB HAS TWO PARTS:
        bullets    -> the entry's bullet points (as an array)
        text       -> prose for entries that are not bulleted (a summary paragraph, or a skills line like "Excel, SQL, Power BI"); empty otherwise
 
-2. TAILOR THE WORDING ONLY. Within that fixed structure, reword and reorder the BULLETS (and any prose text) so the most relevant-to-this-posting content leads and mirrors the posting's vocabulary where the candidate genuinely did that work.
+2. TAILOR THE WORDING AGGRESSIVELY (within the fixed structure). First extract the posting's specific terminology — named methods, processes, tools, artifacts, and ceremonies (e.g. "process mapping", "user stories", "acceptance criteria", "agile ceremonies", "stakeholder interviews", "UAT", "variance analysis"). Then, for each bullet, if the work it describes genuinely maps to that terminology, rewrite the bullet substantively to use the posting's exact terms instead of a generic paraphrase — replace vague verbs and nouns with the matched vocabulary. Also reorder bullets so the most relevant lead. Leave a bullet mostly unchanged only when nothing relevant applies. TRUTHFUL MAPPING ONLY: relabel real work with the posting's term, but never claim a method, tool, or ceremony the candidate did not actually use.
 
 GROUND-TRUTH RULES (non-negotiable):
 - The resume text is the ONLY source of truth. Never invent employers, titles, dates, metrics, tools, or responsibilities. Do not inflate numbers.
@@ -155,14 +155,18 @@ ${args.redactedResumeText}`;
 /* .docx in-place rewording                                                   */
 /* -------------------------------------------------------------------------- */
 
-const REWORD_SYSTEM = `You reword individual resume lines (bullets and prose) to better fit a target job. You are given a JSON list of lines, each with an id. Return ONLY JSON matching the schema.
+const REWORD_SYSTEM = `You reword individual resume lines (bullets and prose) to strongly fit a target job. You are given a JSON list of lines, each with an id. Return ONLY JSON matching the schema.
+
+BE AGGRESSIVE ABOUT TERMINOLOGY MATCHING:
+- First, extract the specific terminology from the job posting: named methods, processes, tools, artifacts, and ceremonies (e.g. "process mapping", "user stories", "acceptance criteria", "agile ceremonies", "sprint planning", "stakeholder interviews", "UAT", "requirements gathering", "A/B testing", "SQL", "variance analysis"). Also note the seniority and core responsibilities.
+- Then, for EACH bullet, actively ask: does the work this bullet describes genuinely map to any of that terminology or framing? If yes, REWRITE the bullet to use the posting's exact terms in place of a generic paraphrase. Do this substantively — replace vague verbs and generic nouns with the precise, matched vocabulary — not just a cosmetic tweak.
+- Example of the intent: a bullet "Talked to the investment team to understand their needs and documented the steps" tailored for a PM role becomes "Conducted stakeholder interviews with the investment team and produced process maps of their workflow" — same real work, the posting's language.
 
 RULES:
 - Return EXACTLY one output line per input line, with the SAME id. Do not add, drop, merge, split, or reorder lines — each line stays in place.
-- Reword the text of each line to align with the job posting: tighten it, reorder words within the line, and mirror the posting's vocabulary WHERE the candidate genuinely did that work.
-- GROUND TRUTH: the line's own text is the only source of truth. Never invent employers, metrics, tools, or responsibilities. Do not inflate numbers. Keep each line roughly the same length as the original.
-- If a line is already well-suited or has nothing to change, return it unchanged (same id, same text).
-- Also return roleType (the role/industry the posting is for), conventions (short strings on the resume conventions for that role), and changeNotes (a short list of what you changed and why).`;
+- Meaningful edits are the default. Leave a line unchanged ONLY when there is genuinely no relevant terminology or sharper framing to apply — that should be the exception, not the norm.
+- GROUND TRUTH / TRUTHFUL MAPPING: the line's own text is the only source of truth. You may relabel work the candidate actually did with the posting's matching term, but never claim a method, tool, artifact, or ceremony they did not genuinely use, and never invent employers, metrics, or responsibilities. Do not inflate numbers. Keep each line roughly the same length as the original.
+- Also return roleType (the role/industry the posting is for), conventions (short strings on the resume conventions for that role), and changeNotes (a short list of the most significant rewrites and why).`;
 
 const REWORD_SCHEMA = {
   type: Type.OBJECT,
@@ -209,7 +213,7 @@ ${JSON.stringify(args.lines, null, 2)}`;
         systemInstruction: REWORD_SYSTEM,
         responseMimeType: "application/json",
         responseSchema: REWORD_SCHEMA,
-        temperature: 0.3,
+        temperature: 0.45,
         maxOutputTokens: 8192,
       },
     });

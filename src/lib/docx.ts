@@ -131,22 +131,45 @@ export async function parseDocxResume(buffer: Buffer): Promise<DocxParseResult> 
   return { lines, paragraphCount: paragraphs.length, warnings };
 }
 
-/** Write `text` into a paragraph, preserving a leading bullet-glyph run. */
+function isGlyphOnly(t: Element): boolean {
+  const s = textContent(t).trim();
+  return s === "" || BULLET_GLYPH_RE.test(s);
+}
+
+/**
+ * Write `text` into a paragraph, carrying the style of its DOMINANT run — the
+ * run that held the most text — rather than always the first run. This matters
+ * for mixed-format lines: a bold label + normal body (e.g. "Technical: Excel,
+ * …") would, if we used the first run, extend the label's bold across the whole
+ * line. Using the longest (body) run keeps the line's normal weight and never
+ * reintroduces bold on a line that was mostly unbolded. We touch only <w:t>
+ * text — run properties (bold/size/font) are never modified. A leading
+ * bullet-glyph run is preserved.
+ */
 function writeParagraphText(doc: Document, p: Element, text: string) {
   const tNodes = textNodesOf(p);
   if (tNodes.length === 0) return;
 
-  // Which text node holds the first real (non-glyph) content?
-  let firstContentIdx = tNodes.findIndex(
-    (t) => !BULLET_GLYPH_RE.test(textContent(t).trim()) && textContent(t).trim() !== "",
-  );
-  if (firstContentIdx === -1) firstContentIdx = 0;
+  // Dominant = the non-glyph text node holding the most characters.
+  let dominantIdx = -1;
+  let maxLen = -1;
+  tNodes.forEach((t, i) => {
+    if (isGlyphOnly(t)) return;
+    const len = textContent(t).trim().length;
+    if (len > maxLen) {
+      maxLen = len;
+      dominantIdx = i;
+    }
+  });
+  if (dominantIdx === -1) {
+    dominantIdx = tNodes.findIndex((t) => !isGlyphOnly(t));
+  }
+  if (dominantIdx === -1) dominantIdx = 0;
 
   tNodes.forEach((t, i) => {
-    const isGlyphOnly = BULLET_GLYPH_RE.test(textContent(t).trim());
-    if (i < firstContentIdx && isGlyphOnly) return; // keep leading bullet glyph
+    if (i !== dominantIdx && isGlyphOnly(t)) return; // keep bullet glyph runs
     while (t.firstChild) t.removeChild(t.firstChild);
-    if (i === firstContentIdx) {
+    if (i === dominantIdx) {
       t.appendChild(doc.createTextNode(text));
       t.setAttribute("xml:space", "preserve");
     }

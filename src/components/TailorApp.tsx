@@ -66,6 +66,9 @@ export function TailorApp() {
     setResumeFileName(file.name);
     setDocx(null);
     setResumeText("");
+    // Any prior tailored result belongs to the previous file — drop it so an
+    // export can never mix a new upload with a stale result.
+    setResult(null);
     try {
       const form = new FormData();
       form.append("file", file);
@@ -97,6 +100,7 @@ export function TailorApp() {
     setResumeMode("text");
     setDocx(null);
     setResumeFileName(null);
+    setResult(null);
   }
 
   async function fetchJob() {
@@ -204,6 +208,19 @@ export function TailorApp() {
 
   const exportLabel =
     result?.kind === "docx" ? "Export .docx" : "Export PDF";
+
+  // Map each reworded docx line back to its original text so we can show a
+  // before/after and count how many actually changed.
+  const docxOriginals =
+    result?.kind === "docx" && docx
+      ? new Map(docx.lines.map((l) => [l.id, l.text] as const))
+      : null;
+  const docxChangedCount =
+    result?.kind === "docx"
+      ? result.lines.filter(
+          (l) => (docxOriginals?.get(l.id) ?? l.text) !== l.text,
+        ).length
+      : 0;
 
   return (
     <div className="space-y-8">
@@ -405,10 +422,21 @@ export function TailorApp() {
               </p>
             ))}
 
+          {result.kind === "docx" ? (
+            <p className="text-sm text-text-muted">
+              <span className="text-brown font-semibold">
+                {docxChangedCount}
+              </span>{" "}
+              of {result.lines.length} lines reworded.
+            </p>
+          ) : null}
+
           {result.changeNotes.length ? (
             <details>
               <summary className="label cursor-pointer">
-                What changed ({result.changeNotes.length})
+                {result.kind === "docx"
+                  ? "Summary of key changes"
+                  : `What changed (${result.changeNotes.length})`}
               </summary>
               <ul className="mt-2 space-y-1 text-sm text-text-muted list-disc pl-5">
                 {result.changeNotes.map((n, i) => (
@@ -419,21 +447,39 @@ export function TailorApp() {
           ) : null}
 
           {result.kind === "docx" ? (
-            <div className="space-y-3">
-              <p className="label !mb-0">Reworded lines</p>
-              {result.lines.map((line, i) => (
-                <textarea
-                  key={line.id}
-                  className="textarea min-h-[48px] text-sm"
-                  value={line.text}
-                  onChange={(e) => {
-                    const lines = result.lines.map((l, j) =>
-                      j === i ? { ...l, text: e.target.value } : l,
-                    );
-                    setResult({ ...result, lines });
-                  }}
-                />
-              ))}
+            <div className="space-y-4">
+              <p className="label !mb-0">
+                Reworded lines — original shown struck through
+              </p>
+              {result.lines.map((line, i) => {
+                const original = docxOriginals?.get(line.id) ?? "";
+                const changed = original !== line.text;
+                return (
+                  <div key={line.id} className="space-y-1">
+                    {changed && original ? (
+                      <p className="text-xs text-text-dim line-through">
+                        {original}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-text-dim">
+                        unchanged from original
+                      </p>
+                    )}
+                    <textarea
+                      className={`textarea min-h-[48px] text-sm ${
+                        changed ? "" : "opacity-60"
+                      }`}
+                      value={line.text}
+                      onChange={(e) => {
+                        const lines = result.lines.map((l, j) =>
+                          j === i ? { ...l, text: e.target.value } : l,
+                        );
+                        setResult({ ...result, lines });
+                      }}
+                    />
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <ResumeStructureEditor
