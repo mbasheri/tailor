@@ -1,7 +1,13 @@
 import "server-only";
 import { GoogleGenAI, Type } from "@google/genai";
 import { AIError } from "@/lib/api";
-import { tailorResultSchema, type TailorResult } from "@/lib/schemas";
+import {
+  rewordResultSchema,
+  tailorResultSchema,
+  type DocxLine,
+  type RewordResult,
+  type TailorResult,
+} from "@/lib/schemas";
 
 /**
  * The only place the Gemini API key is used. It extracts the candidate's resume
@@ -143,4 +149,98 @@ ${args.redactedResumeText}`;
     );
   }
   return result.data;
+}
+
+/* -------------------------------------------------------------------------- */
+/* .docx in-place rewording                                                   */
+/* -------------------------------------------------------------------------- */
+
+const REWORD_SYSTEM = `You reword individual resume lines (bullets and prose) to better fit a target job. You are given a JSON list of lines, each with an id. Return ONLY JSON matching the schema.
+
+RULES:
+- Return EXACTLY one output line per input line, with the SAME id. Do not add, drop, merge, split, or reorder lines — each line stays in place.
+- Reword the text of each line to align with the job posting: tighten it, reorder words within the line, and mirror the posting's vocabulary WHERE the candidate genuinely did that work.
+- GROUND TRUTH: the line's own text is the only source of truth. Never invent employers, metrics, tools, or responsibilities. Do not inflate numbers. Keep each line roughly the same length as the original.
+- If a line is already well-suited or has nothing to change, return it unchanged (same id, same text).
+- Also return roleType (the role/industry the posting is for), conventions (short strings on the resume conventions for that role), and changeNotes (a short list of what you changed and why).`;
+
+const REWORD_SCHEMA = {
+  type: Type.OBJECT,
+  properties: {
+    roleType: { type: Type.STRING },
+    conventions: { type: Type.ARRAY, items: { type: Type.STRING } },
+    changeNotes: { type: Type.ARRAY, items: { type: Type.STRING } },
+    lines: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          id: { type: Type.STRING },
+          text: { type: Type.STRING },
+        },
+        required: ["id", "text"],
+        propertyOrdering: ["id", "text"],
+      },
+    },
+  },
+  required: ["roleType", "conventions", "changeNotes", "lines"],
+  propertyOrdering: ["roleType", "conventions", "changeNotes", "lines"],
+};
+
+export async function rewordResumeLines(args: {
+  jobText: string;
+  lines: DocxLine[];
+}): Promise<RewordResult> {
+  const ai = getClient();
+
+  const prompt = `TARGET JOB POSTING:
+${args.jobText}
+
+---
+RESUME LINES TO REWORD (JSON; return one output per id, same order):
+${JSON.stringify(args.lines, null, 2)}`;
+
+  let raw: string | undefined;
+  try {
+    const res = await ai.models.generateContent({
+      model: MODEL,
+      contents: prompt,
+      config: {
+        systemInstruction: REWORD_SYSTEM,
+        responseMimeType: "application/json",
+        responseSchema: REWORD_SCHEMA,
+        temperature: 0.3,
+        maxOutputTokens: 8192,
+      },
+    });
+    raw = res.text;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new AIError(`Gemini request failed: ${detail}`);
+  }
+
+  if (!raw) throw new AIError("Gemini returned an empty response. Try again.");
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new AIError("Gemini returned output that was not valid JSON.");
+  }
+
+  const result = rewordResultSchema.safeParse(parsed);
+  if (!result.success) {
+    throw new AIError("Gemini's output did not match the expected shape.");
+  }
+
+  // Safety: only keep reworded lines whose id exists in the input; fall back to
+  // the original text for any input line the model dropped. Never trust it to
+  // have preserved the set on its own.
+  const byId = new Map(result.data.lines.map((l) => [l.id, l.text]));
+  const lines = args.lines.map((l) => ({
+    id: l.id,
+    text: byId.get(l.id) ?? l.text,
+  }));
+
+  return { ...result.data, lines };
 }

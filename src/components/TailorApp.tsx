@@ -2,16 +2,33 @@
 
 import { useRef, useState } from "react";
 import { api, jsonBody } from "@/lib/client";
-import type { ResumeStructure } from "@/lib/schemas";
+import type { ResumeStructure, DocxLine } from "@/lib/schemas";
 import { Spinner, ErrorBanner } from "@/components/ui";
 import { ResumeStructureEditor } from "@/components/resume/ResumeStructureEditor";
 
-interface TailorResponse {
-  roleType: string;
-  conventions: string[];
-  changeNotes: string[];
-  resume: ResumeStructure;
+interface DocxState {
+  base64: string;
+  fileName: string;
+  lines: DocxLine[];
+  warnings: string[];
 }
+
+type Result =
+  | {
+      kind: "pdf";
+      roleType: string;
+      conventions: string[];
+      changeNotes: string[];
+      resume: ResumeStructure;
+    }
+  | {
+      kind: "docx";
+      roleType: string;
+      conventions: string[];
+      changeNotes: string[];
+      lines: DocxLine[];
+      warnings: string[];
+    };
 
 interface FetchJobResponse {
   ok: boolean;
@@ -23,6 +40,7 @@ export function TailorApp() {
   const [resumeMode, setResumeMode] = useState<"upload" | "text">("upload");
   const [resumeText, setResumeText] = useState("");
   const [resumeFileName, setResumeFileName] = useState<string | null>(null);
+  const [docx, setDocx] = useState<DocxState | null>(null);
   const [parsing, setParsing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -36,8 +54,7 @@ export function TailorApp() {
   } | null>(null);
 
   const [tailoring, setTailoring] = useState(false);
-  const [result, setResult] = useState<TailorResponse | null>(null);
-  const [edited, setEdited] = useState<ResumeStructure | null>(null);
+  const [result, setResult] = useState<Result | null>(null);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const resultRef = useRef<HTMLDivElement>(null);
@@ -47,21 +64,39 @@ export function TailorApp() {
     setParsing(true);
     setError(null);
     setResumeFileName(file.name);
+    setDocx(null);
+    setResumeText("");
     try {
       const form = new FormData();
       form.append("file", file);
       const res = await fetch("/api/parse-resume", { method: "POST", body: form });
       const body = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(body?.error ?? `Couldn't read PDF (${res.status})`);
-      setResumeText(body.text);
-      setResumeMode("text");
+      if (!res.ok) throw new Error(body?.error ?? `Couldn't read file (${res.status})`);
+
+      if (body.kind === "docx") {
+        setDocx({
+          base64: body.docxBase64,
+          fileName: body.fileName,
+          lines: body.lines,
+          warnings: body.warnings ?? [],
+        });
+      } else {
+        setResumeText(body.text);
+        setResumeMode("text");
+      }
     } catch (err) {
       setResumeFileName(null);
-      setError(err instanceof Error ? err.message : "Couldn't read that PDF");
+      setError(err instanceof Error ? err.message : "Couldn't read that file");
     } finally {
       setParsing(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
+  }
+
+  function switchToText() {
+    setResumeMode("text");
+    setDocx(null);
+    setResumeFileName(null);
   }
 
   async function fetchJob() {
@@ -97,12 +132,23 @@ export function TailorApp() {
     setTailoring(true);
     setError(null);
     try {
-      const res = await api<TailorResponse>(
-        "/api/tailor",
-        jsonBody({ jobText, resumeText }),
-      );
-      setResult(res);
-      setEdited(res.resume);
+      if (docx) {
+        const res = await api<{
+          roleType: string;
+          conventions: string[];
+          changeNotes: string[];
+          lines: DocxLine[];
+        }>("/api/tailor-docx", jsonBody({ jobText, lines: docx.lines }));
+        setResult({ kind: "docx", ...res, warnings: docx.warnings });
+      } else {
+        const res = await api<{
+          roleType: string;
+          conventions: string[];
+          changeNotes: string[];
+          resume: ResumeStructure;
+        }>("/api/tailor", jsonBody({ jobText, resumeText }));
+        setResult({ kind: "pdf", ...res });
+      }
       requestAnimationFrame(() =>
         resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
       );
@@ -113,29 +159,33 @@ export function TailorApp() {
     }
   }
 
-  async function exportPdf() {
-    if (!edited) return;
+  async function exportFile() {
+    if (!result) return;
     setExporting(true);
     setError(null);
     try {
-      const res = await fetch("/api/export-pdf", {
+      const [url, payload] =
+        result.kind === "docx"
+          ? ["/api/export-docx", { docxBase64: docx!.base64, edits: result.lines }]
+          : ["/api/export-pdf", { resume: result.resume }];
+      const res = await fetch(url as string, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ resume: edited }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => null);
         throw new Error(body?.error ?? `Export failed (${res.status})`);
       }
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
+      const href = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = url;
+      a.href = href;
       a.download =
         res.headers.get("content-disposition")?.match(/filename="(.+)"/)?.[1] ??
-        "resume-tailored.pdf";
+        (result.kind === "docx" ? "resume-tailored.docx" : "resume-tailored.pdf");
       a.click();
-      URL.revokeObjectURL(url);
+      URL.revokeObjectURL(href);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Export failed");
     } finally {
@@ -145,12 +195,15 @@ export function TailorApp() {
 
   function reset() {
     setResult(null);
-    setEdited(null);
     setError(null);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  const canTailor = jobText.trim().length > 0 && resumeText.trim().length > 0;
+  const resumeReady = docx ? docx.lines.length > 0 : resumeText.trim().length > 0;
+  const canTailor = jobText.trim().length > 0 && resumeReady;
+
+  const exportLabel =
+    result?.kind === "docx" ? "Export .docx" : "Export PDF";
 
   return (
     <div className="space-y-8">
@@ -160,33 +213,74 @@ export function TailorApp() {
       <section className="space-y-2">
         <div className="flex items-center justify-between">
           <label className="label !mb-0">Your resume</label>
-          <Toggle
-            value={resumeMode}
-            onChange={setResumeMode}
-            options={[
-              ["upload", "Upload PDF"],
-              ["text", "Paste text"],
-            ]}
-          />
+          <div className="inline-flex items-center gap-3 text-sm">
+            <button
+              onClick={() => setResumeMode("upload")}
+              className={
+                resumeMode === "upload"
+                  ? "text-brown font-semibold"
+                  : "text-text-dim hover:text-text"
+              }
+            >
+              Upload
+            </button>
+            <button
+              onClick={switchToText}
+              className={
+                resumeMode === "text"
+                  ? "text-brown font-semibold"
+                  : "text-text-dim hover:text-text"
+              }
+            >
+              Paste text
+            </button>
+          </div>
         </div>
 
         {resumeMode === "upload" ? (
-          <label className="flex flex-col items-center justify-center gap-1 border border-border-strong rounded-lg py-9 cursor-pointer hover:border-brown transition-colors">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="application/pdf"
-              className="hidden"
-              onChange={(e) => onFile(e.target.files?.[0])}
-            />
-            {parsing ? (
-              <Spinner />
-            ) : (
-              <span className="text-sm text-text-muted">
-                {resumeFileName ?? "Click to upload a PDF"}
-              </span>
-            )}
-          </label>
+          <>
+            <label className="flex flex-col items-center justify-center gap-1 border border-border-strong rounded-lg py-9 cursor-pointer hover:border-brown transition-colors">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                className="hidden"
+                onChange={(e) => onFile(e.target.files?.[0])}
+              />
+              {parsing ? (
+                <Spinner />
+              ) : (
+                <>
+                  <span className="text-sm text-text-muted">
+                    {resumeFileName ?? "Click to upload a PDF or .docx"}
+                  </span>
+                  {!resumeFileName ? (
+                    <span className="text-xs text-text-dim">
+                      .docx keeps your file&apos;s exact formatting; PDF uses a
+                      clean template
+                    </span>
+                  ) : null}
+                </>
+              )}
+            </label>
+            {docx ? (
+              <p className="text-good text-sm">
+                Loaded {docx.fileName} — {docx.lines.length} lines will be
+                reworded in place, keeping all formatting.
+              </p>
+            ) : null}
+            {docx?.warnings.map((w, i) => (
+              <p key={i} className="text-warn text-sm">
+                {w}
+              </p>
+            ))}
+            {resumeText ? (
+              <p className="text-text-muted text-sm">
+                Extracted {resumeText.length.toLocaleString()} characters from a
+                PDF — switch to “Paste text” to review.
+              </p>
+            ) : null}
+          </>
         ) : (
           <textarea
             className="textarea min-h-[200px] text-sm leading-relaxed"
@@ -195,26 +289,34 @@ export function TailorApp() {
             onChange={(e) => setResumeText(e.target.value)}
           />
         )}
-        {resumeMode === "upload" && resumeText ? (
-          <p className="text-text-muted text-sm">
-            Extracted {resumeText.length.toLocaleString()} characters — switch to
-            “Paste text” to review.
-          </p>
-        ) : null}
       </section>
 
       {/* Job */}
       <section className="space-y-2">
         <div className="flex items-center justify-between">
           <label className="label !mb-0">Job posting</label>
-          <Toggle
-            value={jobMode}
-            onChange={setJobMode}
-            options={[
-              ["text", "Paste text"],
-              ["url", "From URL"],
-            ]}
-          />
+          <div className="inline-flex items-center gap-3 text-sm">
+            <button
+              onClick={() => setJobMode("text")}
+              className={
+                jobMode === "text"
+                  ? "text-brown font-semibold"
+                  : "text-text-dim hover:text-text"
+              }
+            >
+              Paste text
+            </button>
+            <button
+              onClick={() => setJobMode("url")}
+              className={
+                jobMode === "url"
+                  ? "text-brown font-semibold"
+                  : "text-text-dim hover:text-text"
+              }
+            >
+              From URL
+            </button>
+          </div>
         </div>
 
         {jobMode === "url" ? (
@@ -270,14 +372,16 @@ export function TailorApp() {
       </div>
 
       {/* Result */}
-      {result && edited ? (
+      {result ? (
         <div ref={resultRef} className="space-y-6 pt-4 border-t border-border">
           <div className="flex items-start justify-between gap-3 flex-wrap">
             <div>
               <h2 className="text-xl font-bold text-brown">Tailored resume</h2>
               <p className="text-text-muted text-sm mt-0.5">
-                Read as {result.roleType}. Section order and headings are kept
-                from your original; edit anything, then export.
+                Read as {result.roleType}.{" "}
+                {result.kind === "docx"
+                  ? "Reworded in place inside your .docx — formatting untouched."
+                  : "Your section order and headings are kept; edit anything, then export."}
               </p>
             </div>
             <div className="flex gap-2">
@@ -285,14 +389,21 @@ export function TailorApp() {
                 Start over
               </button>
               <button
-                onClick={exportPdf}
+                onClick={exportFile}
                 disabled={exporting}
                 className="btn btn-primary"
               >
-                {exporting ? <Spinner /> : "Export PDF"}
+                {exporting ? <Spinner /> : exportLabel}
               </button>
             </div>
           </div>
+
+          {result.kind === "docx" &&
+            result.warnings.map((w, i) => (
+              <p key={i} className="text-warn text-sm">
+                {w}
+              </p>
+            ))}
 
           {result.changeNotes.length ? (
             <details>
@@ -307,50 +418,44 @@ export function TailorApp() {
             </details>
           ) : null}
 
-          <ResumeStructureEditor value={edited} onChange={setEdited} />
+          {result.kind === "docx" ? (
+            <div className="space-y-3">
+              <p className="label !mb-0">Reworded lines</p>
+              {result.lines.map((line, i) => (
+                <textarea
+                  key={line.id}
+                  className="textarea min-h-[48px] text-sm"
+                  value={line.text}
+                  onChange={(e) => {
+                    const lines = result.lines.map((l, j) =>
+                      j === i ? { ...l, text: e.target.value } : l,
+                    );
+                    setResult({ ...result, lines });
+                  }}
+                />
+              ))}
+            </div>
+          ) : (
+            <ResumeStructureEditor
+              value={result.resume}
+              onChange={(resume) => setResult({ ...result, resume })}
+            />
+          )}
 
           <div className="flex justify-end gap-2">
             <button onClick={reset} className="btn">
               Start over
             </button>
             <button
-              onClick={exportPdf}
+              onClick={exportFile}
               disabled={exporting}
               className="btn btn-primary"
             >
-              {exporting ? <Spinner /> : "Export PDF"}
+              {exporting ? <Spinner /> : exportLabel}
             </button>
           </div>
         </div>
       ) : null}
-    </div>
-  );
-}
-
-function Toggle<T extends string>({
-  value,
-  onChange,
-  options,
-}: {
-  value: T;
-  onChange: (v: T) => void;
-  options: [T, string][];
-}) {
-  return (
-    <div className="inline-flex items-center gap-3 text-sm">
-      {options.map(([val, label]) => (
-        <button
-          key={val}
-          onClick={() => onChange(val)}
-          className={
-            value === val
-              ? "text-brown font-semibold"
-              : "text-text-dim hover:text-text"
-          }
-        >
-          {label}
-        </button>
-      ))}
     </div>
   );
 }

@@ -97,3 +97,32 @@ export const fetchJobRequestSchema = z.object({
 export const exportPdfRequestSchema = z.object({
   resume: resumeStructureSchema,
 });
+
+/* -------------------------------------------------------------------------- */
+/* .docx in-place flow                                                        */
+/* -------------------------------------------------------------------------- */
+
+export const docxLineSchema = z.object({
+  id: z.string(),
+  text: z.string(),
+});
+export type DocxLine = z.infer<typeof docxLineSchema>;
+
+/** Gemini reword result for the docx flow — one entry per input line. */
+export const rewordResultSchema = z.object({
+  roleType: z.string(),
+  conventions: z.array(z.string()),
+  changeNotes: z.array(z.string()),
+  lines: z.array(docxLineSchema),
+});
+export type RewordResult = z.infer<typeof rewordResultSchema>;
+
+export const tailorDocxRequestSchema = z.object({
+  jobText: z.string().min(1, "Provide the job description"),
+  lines: z.array(docxLineSchema).min(1, "No tailorable content found"),
+});
+
+export const exportDocxRequestSchema = z.object({
+  docxBase64: z.string().min(1),
+  edits: z.array(docxLineSchema),
+});
