@@ -60,6 +60,35 @@ function hasTab(p: Element): boolean {
   return p.getElementsByTagName("w:tab").length > 0;
 }
 
+/** The <w:r> run a text node belongs to. */
+function runOf(t: Element): Element | null {
+  let n: Node | null = t.parentNode;
+  while (n && n.nodeName !== "w:r") n = n.parentNode;
+  return (n as Element) ?? null;
+}
+
+/** Whether a text node's run is bold (w:b on, ignoring bCs/explicit-off). */
+function isBoldRun(t: Element): boolean {
+  const run = runOf(t);
+  if (!run) return false;
+  let rpr: Element | null = null;
+  for (let i = 0; i < run.childNodes.length; i++) {
+    const c = run.childNodes.item(i);
+    if (c && c.nodeName === "w:rPr") {
+      rpr = c as Element;
+      break;
+    }
+  }
+  if (!rpr) return false;
+  const bs = rpr.getElementsByTagName("w:b"); // exact name; excludes w:bCs
+  for (let i = 0; i < bs.length; i++) {
+    const val = bs.item(i)!.getAttribute("w:val");
+    if (val === "false" || val === "0" || val === "none") continue;
+    return true;
+  }
+  return false;
+}
+
 /**
  * Decide whether a paragraph is resume CONTENT we should reword. Deterministic —
  * parse and export must classify identically so ids line up.
@@ -136,43 +165,76 @@ function isGlyphOnly(t: Element): boolean {
   return s === "" || BULLET_GLYPH_RE.test(s);
 }
 
+function setNodeText(doc: Document, t: Element, text: string) {
+  while (t.firstChild) t.removeChild(t.firstChild);
+  t.appendChild(doc.createTextNode(text));
+  t.setAttribute("xml:space", "preserve");
+}
+
+function clearNode(t: Element) {
+  while (t.firstChild) t.removeChild(t.firstChild);
+}
+
 /**
- * Write `text` into a paragraph, carrying the style of its DOMINANT run — the
- * run that held the most text — rather than always the first run. This matters
- * for mixed-format lines: a bold label + normal body (e.g. "Technical: Excel,
- * …") would, if we used the first run, extend the label's bold across the whole
- * line. Using the longest (body) run keeps the line's normal weight and never
- * reintroduces bold on a line that was mostly unbolded. We touch only <w:t>
- * text — run properties (bold/size/font) are never modified. A leading
- * bullet-glyph run is preserved.
+ * Write `text` back into a paragraph while preserving its run formatting. Two
+ * cases handled explicitly so bold is never gained or lost:
+ *
+ *  - "Bold label: normal body" (e.g. skills lines "Technical: Excel, …"):
+ *    split the reworded text at the first colon and keep the label in the bold
+ *    run and the body in the normal run — so every reworded label stays bold,
+ *    consistently.
+ *  - Otherwise: write into the longest NON-BOLD run when one exists (so a
+ *    bullet never becomes bold just because one sub-run happened to be bold);
+ *    fall back to the longest run only when the whole line is bold.
+ *
+ * We only ever change <w:t> text — run properties (bold/size/font) are never
+ * modified. A leading bullet-glyph run is preserved.
  */
 function writeParagraphText(doc: Document, p: Element, text: string) {
   const tNodes = textNodesOf(p);
   if (tNodes.length === 0) return;
 
-  // Dominant = the non-glyph text node holding the most characters.
-  let dominantIdx = -1;
-  let maxLen = -1;
-  tNodes.forEach((t, i) => {
-    if (isGlyphOnly(t)) return;
-    const len = textContent(t).trim().length;
-    if (len > maxLen) {
-      maxLen = len;
-      dominantIdx = i;
-    }
-  });
-  if (dominantIdx === -1) {
-    dominantIdx = tNodes.findIndex((t) => !isGlyphOnly(t));
-  }
-  if (dominantIdx === -1) dominantIdx = 0;
+  const content = tNodes
+    .map((t, i) => ({ t, i, len: textContent(t).trim().length, bold: isBoldRun(t) }))
+    .filter((c) => !isGlyphOnly(c.t));
 
+  if (content.length === 0) {
+    setNodeText(doc, tNodes[0], text);
+    return;
+  }
+
+  const allBold = content.every((c) => c.bold);
+  const first = content[0];
+  const colon = text.indexOf(":");
+
+  // Bold-label + normal-body line.
+  if (first.bold && !allBold && /:/.test(textContent(first.t)) && colon > 0) {
+    const labelPart = text.slice(0, colon + 1);
+    const bodyPart = text.slice(colon + 1);
+    const bodyCandidates = content.filter((c) => c.i !== first.i);
+    const nonBold = bodyCandidates.filter((c) => !c.bold);
+    const bodyCarrier = (nonBold.length ? nonBold : bodyCandidates).reduce((a, b) =>
+      b.len > a.len ? b : a,
+    );
+    tNodes.forEach((t, i) => {
+      if (i !== first.i && i !== bodyCarrier.i && isGlyphOnly(t)) return;
+      if (i === first.i) setNodeText(doc, t, labelPart);
+      else if (i === bodyCarrier.i) setNodeText(doc, t, bodyPart);
+      else clearNode(t);
+    });
+    return;
+  }
+
+  // Normal line: carry the style of the longest non-bold run (or longest run
+  // if the whole line is bold), never introducing bold on body text.
+  const nonBold = content.filter((c) => !c.bold);
+  const carrier = (nonBold.length ? nonBold : content).reduce((a, b) =>
+    b.len > a.len ? b : a,
+  );
   tNodes.forEach((t, i) => {
-    if (i !== dominantIdx && isGlyphOnly(t)) return; // keep bullet glyph runs
-    while (t.firstChild) t.removeChild(t.firstChild);
-    if (i === dominantIdx) {
-      t.appendChild(doc.createTextNode(text));
-      t.setAttribute("xml:space", "preserve");
-    }
+    if (i !== carrier.i && isGlyphOnly(t)) return;
+    if (i === carrier.i) setNodeText(doc, t, text);
+    else clearNode(t);
   });
 }
 

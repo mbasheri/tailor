@@ -45,7 +45,9 @@ YOUR JOB HAS TWO PARTS:
        bullets    -> the entry's bullet points (as an array)
        text       -> prose for entries that are not bulleted (a summary paragraph, or a skills line like "Excel, SQL, Power BI"); empty otherwise
 
-2. TAILOR THE WORDING AGGRESSIVELY (within the fixed structure). First extract the posting's specific terminology — named methods, processes, tools, artifacts, and ceremonies (e.g. "process mapping", "user stories", "acceptance criteria", "agile ceremonies", "stakeholder interviews", "UAT", "variance analysis"). Then, for each bullet, if the work it describes genuinely maps to that terminology, rewrite the bullet substantively to use the posting's exact terms instead of a generic paraphrase — replace vague verbs and nouns with the matched vocabulary. Also reorder bullets so the most relevant lead. Leave a bullet mostly unchanged only when nothing relevant applies. TRUTHFUL MAPPING ONLY: relabel real work with the posting's term, but never claim a method, tool, or ceremony the candidate did not actually use.
+2. TAILOR THE WORDING AGGRESSIVELY (within the fixed structure). First extract the posting's specific terminology — named methods, processes, tools, artifacts, and ceremonies (e.g. "process mapping", "user stories", "acceptance criteria", "agile ceremonies", "stakeholder interviews", "UAT", "variance analysis"). Then, for each bullet, if the work it describes genuinely maps to that terminology, rewrite the bullet substantively to use the posting's exact terms instead of a generic paraphrase — replace vague verbs and nouns with the matched vocabulary. Also reorder bullets so the most relevant lead. Leave a bullet mostly unchanged only when nothing relevant applies.
+   CONCRETENESS: prefer concrete, specific language over generic corporate filler; keep the original's specific nouns, tool names, numbers, and named outcomes. Never swap them for vaguer phrases ("decision-ready artifacts", "clear signal", "actionable insights", "synthesizing insights") that say less. Never drop or generalize a specific named item — keep every named metric, tool, method, or entity verbatim (e.g. do not turn "NOI, IRR, and MOIC" into "key financial metrics", or "Bloomberg" into "external data").
+   TRUTHFUL MAPPING ONLY: relabel real work with the posting's term, but never change the actual substance — who did the work, what tool was used, what actually happened must stay true. E.g. "automated the workflow with VBA" must not become "presented the business case for automation". If a term would require changing the facts, do not use it; leave the bullet closer to the original.
 
 GROUND-TRUTH RULES (non-negotiable):
 - The resume text is the ONLY source of truth. Never invent employers, titles, dates, metrics, tools, or responsibilities. Do not inflate numbers.
@@ -162,10 +164,21 @@ BE AGGRESSIVE ABOUT TERMINOLOGY MATCHING:
 - Then, for EACH bullet, actively ask: does the work this bullet describes genuinely map to any of that terminology or framing? If yes, REWRITE the bullet to use the posting's exact terms in place of a generic paraphrase. Do this substantively — replace vague verbs and generic nouns with the precise, matched vocabulary — not just a cosmetic tweak.
 - Example of the intent: a bullet "Talked to the investment team to understand their needs and documented the steps" tailored for a PM role becomes "Conducted stakeholder interviews with the investment team and produced process maps of their workflow" — same real work, the posting's language.
 
+CONCRETENESS — do not trade specifics for jargon:
+- Prefer concrete, specific language over generic corporate filler. Keep the original's specific nouns, tool names, numbers, and named outcomes. Never replace them with vague phrases that say less. BANNED kinds of filler: "decision-ready artifacts", "clear signal", "actionable insights", "drove alignment", "leveraged synergies", "translating complex inputs", "synthesizing insights", "operational process efficiency" — if you catch yourself writing something this vague, keep the original's concrete wording instead.
+- NEVER drop or generalize a specific named item. Keep every named metric, tool, method, or entity from the original verbatim: e.g. do NOT replace "NOI, IRR, and MOIC" with "key financial metrics", or "Bloomberg" with "external data", or "SQL" with "databases". Specific names must survive the rewrite.
+- A rewrite must say at least as much as the original, never less.
+
+DO NOT CHANGE THE FACTS — framing/terminology only:
+- Never alter the actual substance of what happened: WHO did the work, WHAT tool was used, and WHAT actually occurred must stay true to the original. You may change vocabulary and framing; you may not change events.
+- Forbidden example: "Automated the workflow with VBA" must NOT become "presented the business case for workflow automation" — that changes who did what and what happened. The person did the automation themselves; keep that.
+- If matching a posting's term would require changing the underlying fact of what happened, DO NOT use that term. Leave the line closer to the original instead of forcing a term that isn't true.
+- For skills lines formatted as "Label: item, item, …", keep that exact "Label: comma-separated list" format.
+
 RULES:
 - Return EXACTLY one output line per input line, with the SAME id. Do not add, drop, merge, split, or reorder lines — each line stays in place.
-- Meaningful edits are the default. Leave a line unchanged ONLY when there is genuinely no relevant terminology or sharper framing to apply — that should be the exception, not the norm.
-- GROUND TRUTH / TRUTHFUL MAPPING: the line's own text is the only source of truth. You may relabel work the candidate actually did with the posting's matching term, but never claim a method, tool, artifact, or ceremony they did not genuinely use, and never invent employers, metrics, or responsibilities. Do not inflate numbers. Keep each line roughly the same length as the original.
+- Meaningful edits are the default WHERE a truthful terminology match exists. Leave a line close to the original when no honest, more-concrete match applies — a faithful line beats a jargon-y one.
+- GROUND TRUTH: the line's own text is the only source of truth. You may relabel work the candidate actually did with the posting's matching term, but never claim a method, tool, artifact, or ceremony they did not genuinely use, and never invent employers, metrics, or responsibilities. Do not inflate numbers. Keep each line roughly the same length as the original.
 - Also return roleType (the role/industry the posting is for), conventions (short strings on the resume conventions for that role), and changeNotes (a short list of the most significant rewrites and why).`;
 
 const REWORD_SCHEMA = {
