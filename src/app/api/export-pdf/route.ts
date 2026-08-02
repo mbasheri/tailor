@@ -21,9 +21,9 @@ function slugify(value: string) {
  */
 export async function POST(request: Request) {
   return route(async () => {
-    const { content } = await parseBody(request, exportPdfRequestSchema);
-    const buffer = await renderResumePdf(content);
-    const filename = `${slugify(content.contact.name || "resume")}-tailored.pdf`;
+    const { resume } = await parseBody(request, exportPdfRequestSchema);
+    const buffer = await renderResumePdf(resume);
+    const filename = `${slugify(resume.contact.name || "resume")}-tailored.pdf`;
 
     return new Response(new Uint8Array(buffer), {
       status: 200,

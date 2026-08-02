@@ -1,74 +1,62 @@
 import { z } from "zod";
 
 /**
- * Resume content shapes + the Gemini tailoring output, all validated with Zod.
- * Nothing is persisted anywhere — these guard the boundary between the model's
- * JSON and what we render/export in a single session.
+ * A resume is modeled as an ordered list of sections, each with the heading the
+ * candidate actually used and a list of entries. This lets us preserve ANY
+ * resume's own structure (section order, headings, entry grouping) instead of
+ * forcing a fixed template — the model reproduces the structure and only rewords
+ * the content within it. Nothing is persisted; these schemas guard the boundary
+ * between the model's JSON and what we render/export in a single session.
  */
 
 /* -------------------------------------------------------------------------- */
-/* Resume content                                                             */
+/* Contact (stripped before the model call, re-attached locally)              */
 /* -------------------------------------------------------------------------- */
 
 export const contactSchema = z.object({
-  name: z.string(),
+  name: z.string().optional().default(""),
   email: z.string().optional().default(""),
   phone: z.string().optional().default(""),
   location: z.string().optional().default(""),
   linkedin: z.string().optional().default(""),
   website: z.string().optional().default(""),
 });
-
-export const experienceSchema = z.object({
-  company: z.string(),
-  title: z.string(),
-  location: z.string().optional().default(""),
-  startDate: z.string().optional().default(""),
-  endDate: z.string().optional().default(""),
-  bullets: z.array(z.string()),
-});
-
-export const extracurricularSchema = z.object({
-  organization: z.string(),
-  role: z.string(),
-  startDate: z.string().optional().default(""),
-  endDate: z.string().optional().default(""),
-  bullets: z.array(z.string()),
-});
-
-export const skillGroupSchema = z.object({
-  category: z.string(),
-  items: z.array(z.string()),
-});
-
-export const educationSchema = z.object({
-  institution: z.string(),
-  degree: z.string(),
-  location: z.string().optional().default(""),
-  startDate: z.string().optional().default(""),
-  endDate: z.string().optional().default(""),
-  details: z.array(z.string()).optional().default([]),
-});
-
-/** The parts of a resume the model may rewrite — everything except contact. */
-export const resumeBodySchema = z.object({
-  summary: z.string().optional().default(""),
-  experience: z.array(experienceSchema).default([]),
-  extracurricular: z.array(extracurricularSchema).default([]),
-  skills: z.array(skillGroupSchema).default([]),
-  education: z.array(educationSchema).default([]),
-});
-export type ResumeBody = z.infer<typeof resumeBodySchema>;
-
-export const resumeContentSchema = resumeBodySchema.extend({
-  contact: contactSchema,
-});
-export type ResumeContent = z.infer<typeof resumeContentSchema>;
-export type Experience = z.infer<typeof experienceSchema>;
-export type SkillGroup = z.infer<typeof skillGroupSchema>;
 export type Contact = z.infer<typeof contactSchema>;
 
-export const emptyResumeContent: ResumeContent = {
+/* -------------------------------------------------------------------------- */
+/* Flexible section/entry model                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * One item within a section. Fields are generic so the same shape covers a job
+ * (title=role, subtitle=employer, dateRange, bullets), a degree (title=degree,
+ * subtitle=institution), a project (title=name, bullets), a skills line
+ * (title=category, text="Excel, SQL, …"), or a summary (text only).
+ */
+export const entrySchema = z.object({
+  title: z.string().optional().default(""),
+  subtitle: z.string().optional().default(""),
+  dateRange: z.string().optional().default(""),
+  location: z.string().optional().default(""),
+  bullets: z.array(z.string()).optional().default([]),
+  text: z.string().optional().default(""),
+});
+export type ResumeEntry = z.infer<typeof entrySchema>;
+
+export const sectionSchema = z.object({
+  /** The heading exactly as it appears on the candidate's resume. */
+  heading: z.string(),
+  entries: z.array(entrySchema).default([]),
+});
+export type ResumeSection = z.infer<typeof sectionSchema>;
+
+export const resumeStructureSchema = z.object({
+  contact: contactSchema,
+  sections: z.array(sectionSchema).default([]),
+});
+export type ResumeStructure = z.infer<typeof resumeStructureSchema>;
+
+export const emptyResume: ResumeStructure = {
   contact: {
     name: "",
     email: "",
@@ -77,28 +65,19 @@ export const emptyResumeContent: ResumeContent = {
     linkedin: "",
     website: "",
   },
-  summary: "",
-  experience: [],
-  extracurricular: [],
-  skills: [],
-  education: [],
+  sections: [],
 };
 
 /* -------------------------------------------------------------------------- */
-/* Tailoring output (from Gemini)                                             */
+/* Tailoring output (from Gemini — no contact)                               */
 /* -------------------------------------------------------------------------- */
 
-/**
- * What the model returns. It never sees or returns contact info — that's
- * stripped before the call and re-attached locally. `content` is the rewritten
- * resume body; `roleType`/`conventions` expose the model's reasoning so the
- * user can sanity-check it; `changeNotes` is a short "what I changed and why".
- */
 export const tailorResultSchema = z.object({
   roleType: z.string(),
   conventions: z.array(z.string()),
-  content: resumeBodySchema,
   changeNotes: z.array(z.string()),
+  /** Sections in the SAME order and with the SAME headings as the original. */
+  sections: z.array(sectionSchema),
 });
 export type TailorResult = z.infer<typeof tailorResultSchema>;
 
@@ -116,5 +95,5 @@ export const fetchJobRequestSchema = z.object({
 });
 
 export const exportPdfRequestSchema = z.object({
-  content: resumeContentSchema,
+  resume: resumeStructureSchema,
 });

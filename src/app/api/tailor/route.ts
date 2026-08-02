@@ -1,7 +1,7 @@
 import { ok, parseBody, route } from "@/lib/api";
 import { redactContact } from "@/lib/contact";
 import { generateTailoredResume } from "@/lib/gemini";
-import { tailorRequestSchema, type ResumeContent } from "@/lib/schemas";
+import { tailorRequestSchema, type ResumeStructure } from "@/lib/schemas";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -9,7 +9,7 @@ export const maxDuration = 60;
 /**
  * The core call. Strips contact info locally (privacy option b), sends only the
  * redacted resume + job text to Gemini, then re-attaches the real contact to
- * the model's rewritten body. Nothing is persisted.
+ * the model's structure-preserving rewrite. Nothing is persisted.
  */
 export async function POST(request: Request) {
   return route(async () => {
@@ -23,13 +23,13 @@ export async function POST(request: Request) {
     });
 
     // Re-attach the contact the model never saw.
-    const content: ResumeContent = { contact, ...result.content };
+    const resume: ResumeStructure = { contact, sections: result.sections };
 
     return ok({
       roleType: result.roleType,
       conventions: result.conventions,
       changeNotes: result.changeNotes,
-      content,
+      resume,
     });
   });
 }

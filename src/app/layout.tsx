@@ -1,22 +1,16 @@
 import type { Metadata } from "next";
-import { Inter, Geist_Mono } from "next/font/google";
+import { Space_Grotesk } from "next/font/google";
 import "./globals.css";
-import { NavBar } from "@/components/NavBar";
 
-const inter = Inter({
+const spaceGrotesk = Space_Grotesk({
   variable: "--font-sans-var",
   subsets: ["latin"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-mono-var",
-  subsets: ["latin"],
-});
-
 export const metadata: Metadata = {
-  title: "Lyze — Resume Tailor",
+  title: "Tailor — we alter to perfection",
   description:
-    "Paste a job posting and your resume; get a tailored, ATS-safe PDF. Nothing saved.",
+    "Upload your resume and a job posting; get a reworded, structure-preserving PDF. Nothing saved.",
 };
 
 export default function RootLayout({
@@ -25,13 +19,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="en"
-      className={`${inter.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col">
-        <NavBar />
-        <main className="flex-1 w-full max-w-[1040px] mx-auto px-4 sm:px-6 py-8">
+    <html lang="en" className={`${spaceGrotesk.variable} h-full antialiased`}>
+      <body className="min-h-full">
+        <main className="w-full max-w-[720px] mx-auto px-5 py-14">
           {children}
         </main>
       </body>

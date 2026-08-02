@@ -6,50 +6,58 @@ import {
   StyleSheet,
   renderToBuffer,
 } from "@react-pdf/renderer";
-import type { ResumeContent } from "@/lib/schemas";
+import type { ResumeStructure, ResumeEntry } from "@/lib/schemas";
 
 /**
- * ATS-safe, single-column, black-on-white layouts. No photos, standard fonts
- * (Helvetica is built into @react-pdf), generous margins. Rendered to a buffer
- * server-side and uploaded to Vercel Blob.
+ * Renders the extracted resume STRUCTURE generically: sections in the order the
+ * candidate used them, with their own headings, and each entry laid out from
+ * whatever fields it carries. This follows the uploaded resume's skeleton rather
+ * than imposing a fixed template. ATS-safe: single column, standard fonts, no
+ * photos. It does not reproduce the original's exact fonts/columns/spacing —
+ * that layout is not recoverable from extracted text (see README).
  */
 
 const styles = StyleSheet.create({
   page: {
-    paddingTop: 30,
-    paddingBottom: 28,
+    paddingTop: 28,
+    paddingBottom: 24,
     paddingHorizontal: 40,
     fontFamily: "Helvetica",
     fontSize: 9,
-    color: "#111111",
-    lineHeight: 1.28,
+    color: "#141414",
+    lineHeight: 1.18,
   },
   name: { fontSize: 16, fontFamily: "Helvetica-Bold", marginBottom: 1 },
-  contactLine: { fontSize: 8.2, color: "#333333", marginBottom: 7 },
+  contactLine: { fontSize: 8.3, color: "#333333", marginBottom: 3 },
   sectionTitle: {
-    fontSize: 9.5,
+    fontSize: 9.4,
     fontFamily: "Helvetica-Bold",
     textTransform: "uppercase",
     letterSpacing: 0.5,
     borderBottom: "0.75pt solid #000000",
     paddingBottom: 1.5,
-    marginTop: 8,
-    marginBottom: 3.5,
+    marginTop: 6,
+    marginBottom: 3,
   },
-  summary: { marginBottom: 1 },
-  entry: { marginBottom: 4.5 },
+  entry: { marginBottom: 3 },
   entryHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
+    alignItems: "flex-start",
   },
+  entryHeaderLeft: { flex: 1, paddingRight: 10 },
   entryTitle: { fontFamily: "Helvetica-Bold" },
-  entryOrg: { fontFamily: "Helvetica-Oblique" },
-  entryDates: { fontSize: 8.2, color: "#333333" },
-  bulletRow: { flexDirection: "row", marginTop: 1, paddingRight: 6 },
+  entrySubtitle: { fontFamily: "Helvetica-Oblique" },
+  entryMeta: {
+    fontSize: 8.4,
+    color: "#333333",
+    textAlign: "right",
+    flexShrink: 0,
+  },
+  entryText: { marginTop: 0.5 },
+  bulletRow: { flexDirection: "row", marginTop: 0.5, paddingRight: 6 },
   bulletDot: { width: 9, fontSize: 9 },
   bulletText: { flex: 1 },
-  skillRow: { flexDirection: "row", marginTop: 1 },
-  skillCategory: { fontFamily: "Helvetica-Bold", marginRight: 4 },
 });
 
 function Bullet({ children }: { children: string }) {
@@ -61,121 +69,76 @@ function Bullet({ children }: { children: string }) {
   );
 }
 
-function dateRange(start?: string, end?: string) {
-  if (start && end) return `${start} – ${end}`;
-  return start || end || "";
+function Entry({ entry }: { entry: ResumeEntry }) {
+  const hasHeaderLeft = entry.title || entry.subtitle;
+  const meta = [entry.dateRange, entry.location].filter(Boolean).join(" · ");
+
+  // Skills-style line: a category title followed by an inline list.
+  if (entry.title && entry.text && entry.bullets.length === 0) {
+    return (
+      <View style={styles.entry} wrap={false}>
+        <Text>
+          <Text style={styles.entryTitle}>{entry.title}: </Text>
+          {entry.text}
+        </Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.entry} wrap={false}>
+      {hasHeaderLeft || meta ? (
+        <View style={styles.entryHeader}>
+          <Text style={styles.entryHeaderLeft}>
+            {entry.title ? (
+              <Text style={styles.entryTitle}>{entry.title}</Text>
+            ) : null}
+            {entry.title && entry.subtitle ? <Text> — </Text> : null}
+            {entry.subtitle ? (
+              <Text style={styles.entrySubtitle}>{entry.subtitle}</Text>
+            ) : null}
+          </Text>
+          {meta ? <Text style={styles.entryMeta}>{meta}</Text> : null}
+        </View>
+      ) : null}
+      {entry.text ? <Text style={styles.entryText}>{entry.text}</Text> : null}
+      {entry.bullets.map((b, i) => (
+        <Bullet key={i}>{b}</Bullet>
+      ))}
+    </View>
+  );
 }
 
-export function ResumePdf({ content }: { content: ResumeContent }) {
-  const c = content.contact;
+export function ResumePdf({ resume }: { resume: ResumeStructure }) {
+  const c = resume.contact;
   const contactBits = [c.location, c.phone, c.email, c.linkedin, c.website]
     .filter(Boolean)
     .join("  |  ");
 
   return (
     <Document
-      title={`${c.name} — Resume`}
-      author={c.name}
-      creator="Lyze"
-      producer="Lyze"
+      title={`${c.name || "Resume"} — Tailored`}
+      author={c.name || "Candidate"}
+      creator="Tailor"
+      producer="Tailor"
     >
       <Page size="LETTER" style={styles.page}>
-        <Text style={styles.name}>{c.name}</Text>
+        {c.name ? <Text style={styles.name}>{c.name}</Text> : null}
         {contactBits ? <Text style={styles.contactLine}>{contactBits}</Text> : null}
 
-        {content.summary ? (
-          <>
-            <Text style={styles.sectionTitle}>Summary</Text>
-            <Text style={styles.summary}>{content.summary}</Text>
-          </>
-        ) : null}
-
-        {content.experience.length ? (
-          <>
-            <Text style={styles.sectionTitle}>Professional Experience</Text>
-            {content.experience.map((e, i) => (
-              <View key={i} style={styles.entry} wrap={false}>
-                <View style={styles.entryHeader}>
-                  <Text style={styles.entryTitle}>
-                    {e.company}
-                    {e.location ? `, ${e.location}` : ""}
-                  </Text>
-                  <Text style={styles.entryDates}>
-                    {dateRange(e.startDate, e.endDate)}
-                  </Text>
-                </View>
-                <Text style={styles.entryOrg}>{e.title}</Text>
-                {e.bullets.map((b, j) => (
-                  <Bullet key={j}>{b}</Bullet>
-                ))}
-              </View>
+        {resume.sections.map((section, i) => (
+          <View key={i}>
+            <Text style={styles.sectionTitle}>{section.heading}</Text>
+            {section.entries.map((entry, j) => (
+              <Entry key={j} entry={entry} />
             ))}
-          </>
-        ) : null}
-
-        {content.extracurricular.length ? (
-          <>
-            <Text style={styles.sectionTitle}>Leadership &amp; Involvement</Text>
-            {content.extracurricular.map((x, i) => (
-              <View key={i} style={styles.entry} wrap={false}>
-                <View style={styles.entryHeader}>
-                  <Text style={styles.entryTitle}>{x.organization}</Text>
-                  <Text style={styles.entryDates}>
-                    {dateRange(x.startDate, x.endDate)}
-                  </Text>
-                </View>
-                <Text style={styles.entryOrg}>{x.role}</Text>
-                {x.bullets.map((b, j) => (
-                  <Bullet key={j}>{b}</Bullet>
-                ))}
-              </View>
-            ))}
-          </>
-        ) : null}
-
-        {content.skills.length ? (
-          <>
-            <Text style={styles.sectionTitle}>Skills</Text>
-            {content.skills.map((s, i) => (
-              <View key={i} style={styles.skillRow}>
-                <Text style={styles.skillCategory}>{s.category}:</Text>
-                <Text style={styles.bulletText}>{s.items.join(", ")}</Text>
-              </View>
-            ))}
-          </>
-        ) : null}
-
-        {content.education.length ? (
-          <>
-            <Text style={styles.sectionTitle}>Education</Text>
-            {content.education.map((ed, i) => (
-              <View key={i} style={styles.entry} wrap={false}>
-                <View style={styles.entryHeader}>
-                  <Text style={styles.entryTitle}>
-                    {ed.institution}
-                    {ed.location ? `, ${ed.location}` : ""}
-                  </Text>
-                  <Text style={styles.entryDates}>
-                    {dateRange(ed.startDate, ed.endDate)}
-                  </Text>
-                </View>
-                <Text style={styles.entryOrg}>{ed.degree}</Text>
-                {(ed.details ?? []).map((d, j) => (
-                  <Bullet key={j}>{d}</Bullet>
-                ))}
-              </View>
-            ))}
-          </>
-        ) : null}
+          </View>
+        ))}
       </Page>
     </Document>
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/* Render helper — called from the (non-JSX) route handler                    */
-/* -------------------------------------------------------------------------- */
-
-export function renderResumePdf(content: ResumeContent): Promise<Buffer> {
-  return renderToBuffer(<ResumePdf content={content} />);
+export function renderResumePdf(resume: ResumeStructure): Promise<Buffer> {
+  return renderToBuffer(<ResumePdf resume={resume} />);
 }
