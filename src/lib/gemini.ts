@@ -3,16 +3,16 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { AIError } from "@/lib/api";
 import {
   rewordResultSchema,
-  tailorResultSchema,
+  resumeJsonBodySchema,
   type DocxLine,
   type RewordResult,
-  type TailorResult,
+  type ResumeJsonBody,
 } from "@/lib/schemas";
 
 /**
- * The only place the Gemini API key is used. It extracts the candidate's resume
- * structure (section order, headings, entry grouping) EXACTLY as uploaded, and
- * only rewords the content within it to fit the job — never restructuring.
+ * The only place the Gemini API key is used. It rewords the candidate's existing
+ * resume lines to fit a job (never restructuring), and separately structures the
+ * already-tailoured text into JSON. Contact details are never sent to the model.
  */
 
 const MODEL = process.env.GEMINI_MODEL ?? "gemini-flash-latest";
@@ -29,131 +29,6 @@ function getClient(): GoogleGenAI {
   return client;
 }
 
-const SYSTEM = `You are an expert resume editor. You receive a target job posting and a candidate's resume as raw text (contact details redacted). Return ONLY JSON matching the schema.
-
-YOUR JOB HAS TWO PARTS:
-
-1. EXTRACT STRUCTURE FAITHFULLY. Reproduce the resume's own structure exactly:
-   - Preserve the ORDER of sections as they appear in the resume.
-   - Preserve each section's HEADING using the candidate's own wording (e.g. "PROFESSIONAL EXPERIENCE", "Education", "Technical Skills", "Projects", "Summary"). Do not rename, merge, split, add, or drop sections.
-   - Within each section, preserve every ENTRY (a job, degree, project, skills line, etc.) and keep each bullet under the entry it belongs to. Do not move bullets between entries. Do not add or remove entries.
-   - Map each entry onto these fields (leave a field as "" or [] when not applicable):
-       title      -> role / degree / project name / skills category
-       subtitle   -> employer / institution / (usually empty for skills)
-       dateRange  -> e.g. "Jan 2025 – Apr 2025" (empty if none)
-       location   -> e.g. "Toronto, ON" (empty if none)
-       bullets    -> the entry's bullet points (as an array)
-       text       -> prose for entries that are not bulleted (a summary paragraph, or a skills line like "Excel, SQL, Power BI"); empty otherwise
-
-2. TAILOR THE WORDING AGGRESSIVELY (within the fixed structure). First extract the posting's specific terminology — named methods, processes, tools, artifacts, and ceremonies (e.g. "process mapping", "user stories", "acceptance criteria", "agile ceremonies", "stakeholder interviews", "UAT", "variance analysis"). Then, for each bullet, if the work it describes genuinely maps to that terminology, rewrite the bullet substantively to use the posting's exact terms instead of a generic paraphrase — replace vague verbs and nouns with the matched vocabulary. Also reorder bullets so the most relevant lead. Leave a bullet mostly unchanged only when nothing relevant applies.
-   CONCRETENESS: prefer concrete, specific language over generic corporate filler; keep the original's specific nouns, tool names, numbers, and named outcomes. Never swap them for vaguer phrases ("decision-ready artifacts", "clear signal", "actionable insights", "synthesizing insights") that say less. Never drop or generalize a specific named item — keep every named metric, tool, method, or entity verbatim (e.g. do not turn "NOI, IRR, and MOIC" into "key financial metrics", or "Bloomberg" into "external data"). PRESERVE NUMBER/UNIT FORMATTING: if the original abbreviates ("$200B", "$59B"), keep the abbreviation — never expand to "$200 billion".
-   TRUTHFUL MAPPING ONLY: relabel real work with the posting's term, but never change the actual substance — who did the work, what tool was used, what actually happened must stay true. E.g. "automated the workflow with VBA" must not become "presented the business case for automation". DO NOT NARROW OR ADD SPECIFICITY the original didn't state: if it says "stakeholders" don't narrow to "investors"; if it says "performance metrics" don't narrow to "risk metrics". Keep the original's level of specificity for audience, metric type, and scope. If a term would require changing the facts, do not use it; leave the bullet closer to the original.
-   SKILLS CATEGORY LABELS: you may broaden a label to include the role's key domain phrase for keyword matching (e.g. "Product" -> "Product & Business Analysis"); do not shorten or drop a meaningful label to save space.
-
-GROUND-TRUTH RULES (non-negotiable):
-- The resume text is the ONLY source of truth. Never invent employers, titles, dates, metrics, tools, or responsibilities. Do not inflate numbers.
-- Preserve every employer, title, date, and heading exactly — only bullet/prose wording may change.
-- You may reorder bullets within an entry and drop a genuinely redundant bullet, but never fabricate one.
-- Contact details are redacted (shown as [NAME], [EMAIL], etc.). Omit contact info from your output entirely.
-
-ALSO RETURN: roleType (the industry/role this posting is for), conventions (short strings describing the resume conventions you applied for that role), and changeNotes (a short list of what you reworded/reordered and why).`;
-
-const entrySchema = {
-  type: Type.OBJECT,
-  properties: {
-    title: { type: Type.STRING },
-    subtitle: { type: Type.STRING },
-    dateRange: { type: Type.STRING },
-    location: { type: Type.STRING },
-    bullets: { type: Type.ARRAY, items: { type: Type.STRING } },
-    text: { type: Type.STRING },
-  },
-  required: ["title", "subtitle", "dateRange", "location", "bullets", "text"],
-  propertyOrdering: [
-    "title",
-    "subtitle",
-    "dateRange",
-    "location",
-    "bullets",
-    "text",
-  ],
-};
-
-const RESPONSE_SCHEMA = {
-  type: Type.OBJECT,
-  properties: {
-    roleType: { type: Type.STRING },
-    conventions: { type: Type.ARRAY, items: { type: Type.STRING } },
-    changeNotes: { type: Type.ARRAY, items: { type: Type.STRING } },
-    sections: {
-      type: Type.ARRAY,
-      items: {
-        type: Type.OBJECT,
-        properties: {
-          heading: { type: Type.STRING },
-          entries: { type: Type.ARRAY, items: entrySchema },
-        },
-        required: ["heading", "entries"],
-        propertyOrdering: ["heading", "entries"],
-      },
-    },
-  },
-  required: ["roleType", "conventions", "changeNotes", "sections"],
-  propertyOrdering: ["roleType", "conventions", "changeNotes", "sections"],
-};
-
-export async function generateTailoredResume(args: {
-  jobText: string;
-  redactedResumeText: string;
-}): Promise<TailorResult> {
-  const ai = getClient();
-
-  const prompt = `TARGET JOB POSTING:
-${args.jobText}
-
----
-CANDIDATE RESUME (raw text, contact redacted — this is the ground truth; reproduce its structure exactly):
-${args.redactedResumeText}`;
-
-  let raw: string | undefined;
-  try {
-    const res = await ai.models.generateContent({
-      model: MODEL,
-      contents: prompt,
-      config: {
-        systemInstruction: SYSTEM,
-        responseMimeType: "application/json",
-        responseSchema: RESPONSE_SCHEMA,
-        temperature: 0.3,
-        maxOutputTokens: 8192,
-      },
-    });
-    raw = res.text;
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    throw new AIError(`Gemini request failed: ${detail}`);
-  }
-
-  if (!raw) {
-    throw new AIError("Gemini returned an empty response. Try again.");
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    throw new AIError("Gemini returned output that was not valid JSON.");
-  }
-
-  const result = tailorResultSchema.safeParse(parsed);
-  if (!result.success) {
-    throw new AIError(
-      "Gemini's output did not match the expected resume structure.",
-    );
-  }
-  return result.data;
-}
-
 /* -------------------------------------------------------------------------- */
 /* .docx in-place rewording                                                   */
 /* -------------------------------------------------------------------------- */
@@ -163,7 +38,7 @@ const REWORD_SYSTEM = `You reword individual resume lines (bullets and prose) to
 BE AGGRESSIVE ABOUT TERMINOLOGY MATCHING:
 - First, extract the specific terminology from the job posting: named methods, processes, tools, artifacts, and ceremonies (e.g. "process mapping", "user stories", "acceptance criteria", "agile ceremonies", "sprint planning", "stakeholder interviews", "UAT", "requirements gathering", "A/B testing", "SQL", "variance analysis"). Also note the seniority and core responsibilities.
 - Then, for EACH bullet, actively ask: does the work this bullet describes genuinely map to any of that terminology or framing? If yes, REWRITE the bullet to use the posting's exact terms in place of a generic paraphrase. Do this substantively — replace vague verbs and generic nouns with the precise, matched vocabulary — not just a cosmetic tweak.
-- Example of the intent: a bullet "Talked to the investment team to understand their needs and documented the steps" tailored for a PM role becomes "Conducted stakeholder interviews with the investment team and produced process maps of their workflow" — same real work, the posting's language.
+- Example of the intent: a bullet "Talked to the investment team to understand their needs and documented the steps" tailoured for a PM role becomes "Conducted stakeholder interviews with the investment team and produced process maps of their workflow" — same real work, the posting's language.
 
 CONCRETENESS — do not trade specifics for jargon:
 - Prefer concrete, specific language over generic corporate filler. Keep the original's specific nouns, tool names, numbers, and named outcomes. Never replace them with vague phrases that say less. BANNED kinds of filler: "decision-ready artifacts", "clear signal", "actionable insights", "drove alignment", "leveraged synergies", "translating complex inputs", "synthesizing insights", "operational process efficiency" — if you catch yourself writing something this vague, keep the original's concrete wording instead.
@@ -263,4 +138,101 @@ ${JSON.stringify(args.lines, null, 2)}`;
   }));
 
   return { ...result.data, lines };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Structure the tailoured resume into JSON (for a future ATS auto-fill flow)  */
+/* -------------------------------------------------------------------------- */
+
+const JSON_SYSTEM = `You convert a resume's plain text into a structured JSON object. The text is ALREADY final (it was tailoured upstream) — do not rewrite, improve, or add anything; only organize the existing content into fields. Return ONLY JSON matching the schema.
+
+- summary: the professional summary/profile paragraph if present, else "".
+- skills: a flat list of individual skills, pulled from any skills/competencies section.
+- experience: one object per job, in the order they appear, with title (role), company, dates, and the bullets exactly as written.
+- education: one object per entry with degree, institution, dates.
+- certifications: a flat list, or [] if none.
+- Copy text verbatim from the resume; never invent employers, dates, or bullets. Contact details (name/email/phone) are redacted and are filled in separately — ignore them.`;
+
+const JSON_SCHEMA = {
+  type: Type.OBJECT,
+  properties: {
+    summary: { type: Type.STRING },
+    skills: { type: Type.ARRAY, items: { type: Type.STRING } },
+    experience: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          title: { type: Type.STRING },
+          company: { type: Type.STRING },
+          dates: { type: Type.STRING },
+          bullets: { type: Type.ARRAY, items: { type: Type.STRING } },
+        },
+        required: ["title", "company", "dates", "bullets"],
+        propertyOrdering: ["title", "company", "dates", "bullets"],
+      },
+    },
+    education: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          degree: { type: Type.STRING },
+          institution: { type: Type.STRING },
+          dates: { type: Type.STRING },
+        },
+        required: ["degree", "institution", "dates"],
+        propertyOrdering: ["degree", "institution", "dates"],
+      },
+    },
+    certifications: { type: Type.ARRAY, items: { type: Type.STRING } },
+  },
+  required: ["summary", "skills", "experience", "education", "certifications"],
+  propertyOrdering: [
+    "summary",
+    "skills",
+    "experience",
+    "education",
+    "certifications",
+  ],
+};
+
+export async function structureResumeJson(
+  redactedResumeText: string,
+): Promise<ResumeJsonBody> {
+  const ai = getClient();
+
+  let raw: string | undefined;
+  try {
+    const res = await ai.models.generateContent({
+      model: MODEL,
+      contents: `RESUME TEXT (already tailoured; contact redacted):\n${redactedResumeText}`,
+      config: {
+        systemInstruction: JSON_SYSTEM,
+        responseMimeType: "application/json",
+        responseSchema: JSON_SCHEMA,
+        temperature: 0.1,
+        maxOutputTokens: 8192,
+      },
+    });
+    raw = res.text;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new AIError(`Gemini request failed: ${detail}`);
+  }
+
+  if (!raw) throw new AIError("Gemini returned an empty response. Try again.");
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new AIError("Gemini returned output that was not valid JSON.");
+  }
+
+  const result = resumeJsonBodySchema.safeParse(parsed);
+  if (!result.success) {
+    throw new AIError("Gemini's JSON did not match the expected shape.");
+  }
+  return result.data;
 }

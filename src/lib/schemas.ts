@@ -1,16 +1,14 @@
 import { z } from "zod";
 
 /**
- * A resume is modeled as an ordered list of sections, each with the heading the
- * candidate actually used and a list of entries. This lets us preserve ANY
- * resume's own structure (section order, headings, entry grouping) instead of
- * forcing a fixed template — the model reproduces the structure and only rewords
- * the content within it. Nothing is persisted; these schemas guard the boundary
- * between the model's JSON and what we render/export in a single session.
+ * tailour is docx-first: a resume is edited in place inside its own .docx, so we
+ * only reword the text of existing bullet/prose runs and leave all formatting
+ * untouched. These schemas guard the boundary between the model's JSON and what
+ * we export in a single, stateless request. Nothing is persisted.
  */
 
 /* -------------------------------------------------------------------------- */
-/* Contact (stripped before the model call, re-attached locally)              */
+/* Contact (extracted locally, never sent to the model)                       */
 /* -------------------------------------------------------------------------- */
 
 export const contactSchema = z.object({
@@ -24,89 +22,24 @@ export const contactSchema = z.object({
 export type Contact = z.infer<typeof contactSchema>;
 
 /* -------------------------------------------------------------------------- */
-/* Flexible section/entry model                                               */
-/* -------------------------------------------------------------------------- */
-
-/**
- * One item within a section. Fields are generic so the same shape covers a job
- * (title=role, subtitle=employer, dateRange, bullets), a degree (title=degree,
- * subtitle=institution), a project (title=name, bullets), a skills line
- * (title=category, text="Excel, SQL, …"), or a summary (text only).
- */
-export const entrySchema = z.object({
-  title: z.string().optional().default(""),
-  subtitle: z.string().optional().default(""),
-  dateRange: z.string().optional().default(""),
-  location: z.string().optional().default(""),
-  bullets: z.array(z.string()).optional().default([]),
-  text: z.string().optional().default(""),
-});
-export type ResumeEntry = z.infer<typeof entrySchema>;
-
-export const sectionSchema = z.object({
-  /** The heading exactly as it appears on the candidate's resume. */
-  heading: z.string(),
-  entries: z.array(entrySchema).default([]),
-});
-export type ResumeSection = z.infer<typeof sectionSchema>;
-
-export const resumeStructureSchema = z.object({
-  contact: contactSchema,
-  sections: z.array(sectionSchema).default([]),
-});
-export type ResumeStructure = z.infer<typeof resumeStructureSchema>;
-
-export const emptyResume: ResumeStructure = {
-  contact: {
-    name: "",
-    email: "",
-    phone: "",
-    location: "",
-    linkedin: "",
-    website: "",
-  },
-  sections: [],
-};
-
-/* -------------------------------------------------------------------------- */
-/* Tailoring output (from Gemini — no contact)                               */
-/* -------------------------------------------------------------------------- */
-
-export const tailorResultSchema = z.object({
-  roleType: z.string(),
-  conventions: z.array(z.string()),
-  changeNotes: z.array(z.string()),
-  /** Sections in the SAME order and with the SAME headings as the original. */
-  sections: z.array(sectionSchema),
-});
-export type TailorResult = z.infer<typeof tailorResultSchema>;
-
-/* -------------------------------------------------------------------------- */
-/* API request payloads                                                       */
-/* -------------------------------------------------------------------------- */
-
-export const tailorRequestSchema = z.object({
-  jobText: z.string().min(1, "Provide the job description"),
-  resumeText: z.string().min(1, "Provide your resume"),
-});
-
-export const fetchJobRequestSchema = z.object({
-  url: z.string().url("Enter a valid URL"),
-});
-
-export const exportPdfRequestSchema = z.object({
-  resume: resumeStructureSchema,
-});
-
-/* -------------------------------------------------------------------------- */
 /* .docx in-place flow                                                        */
 /* -------------------------------------------------------------------------- */
 
+/** A rewordable line sent to / returned from the model. */
 export const docxLineSchema = z.object({
   id: z.string(),
   text: z.string(),
 });
 export type DocxLine = z.infer<typeof docxLineSchema>;
+
+/**
+ * A parsed line carries a `group` (the job/position it sits under) so the review
+ * UI can cluster changes by position. `group` never leaves the client — it is
+ * not part of the model round-trip.
+ */
+export interface ParsedDocxLine extends DocxLine {
+  group: string;
+}
 
 /** Gemini reword result for the docx flow — one entry per input line. */
 export const rewordResultSchema = z.object({
@@ -117,12 +50,58 @@ export const rewordResultSchema = z.object({
 });
 export type RewordResult = z.infer<typeof rewordResultSchema>;
 
-export const tailorDocxRequestSchema = z.object({
-  jobText: z.string().min(1, "Provide the job description"),
-  lines: z.array(docxLineSchema).min(1, "No tailorable content found"),
+/* -------------------------------------------------------------------------- */
+/* Structured JSON output (for a future ATS auto-fill flow)                   */
+/* -------------------------------------------------------------------------- */
+
+export const resumeJsonExperienceSchema = z.object({
+  title: z.string(),
+  company: z.string(),
+  dates: z.string(),
+  bullets: z.array(z.string()),
 });
 
-export const exportDocxRequestSchema = z.object({
+export const resumeJsonEducationSchema = z.object({
+  degree: z.string(),
+  institution: z.string(),
+  dates: z.string(),
+});
+
+/** Built by the model from the tailoured resume body (contact fields are filled
+ * locally). Field names are generic to map onto common ATS form fields. */
+export const resumeJsonBodySchema = z.object({
+  summary: z.string(),
+  skills: z.array(z.string()),
+  experience: z.array(resumeJsonExperienceSchema),
+  education: z.array(resumeJsonEducationSchema),
+  certifications: z.array(z.string()),
+});
+export type ResumeJsonBody = z.infer<typeof resumeJsonBodySchema>;
+
+export const resumeJsonSchema = resumeJsonBodySchema.extend({
+  name: z.string(),
+  email: z.string(),
+  phone: z.string(),
+  location: z.string(),
+});
+export type ResumeJson = z.infer<typeof resumeJsonSchema>;
+
+/* -------------------------------------------------------------------------- */
+/* API request payloads                                                       */
+/* -------------------------------------------------------------------------- */
+
+export const fetchJobRequestSchema = z.object({
+  url: z.string().url("enter a valid url"),
+});
+
+export const tailourDocxRequestSchema = z.object({
+  jobText: z.string().min(1, "provide the job description"),
+  lines: z.array(docxLineSchema).min(1, "no tailourable content found"),
+});
+
+/** Used by both the docx and pdf exports, and by the json builder — all derive
+ * from the same original file plus the same edits, so outputs always agree. */
+export const docxExportRequestSchema = z.object({
   docxBase64: z.string().min(1),
   edits: z.array(docxLineSchema),
 });

@@ -1,6 +1,6 @@
 import { ok, parseBody, route } from "@/lib/api";
 import { rewordResumeLines } from "@/lib/gemini";
-import { tailorDocxRequestSchema } from "@/lib/schemas";
+import { tailourDocxRequestSchema } from "@/lib/schemas";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -13,7 +13,7 @@ export const maxDuration = 60;
  */
 export async function POST(request: Request) {
   return route(async () => {
-    const { jobText, lines } = await parseBody(request, tailorDocxRequestSchema);
+    const { jobText, lines } = await parseBody(request, tailourDocxRequestSchema);
     const result = await rewordResumeLines({ jobText, lines });
     return ok(result);
   });

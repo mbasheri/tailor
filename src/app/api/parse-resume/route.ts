@@ -1,4 +1,3 @@
-import { extractText, getDocumentProxy } from "unpdf";
 import { HttpError, ok, route } from "@/lib/api";
 import { parseDocxResume } from "@/lib/docx";
 
@@ -9,73 +8,40 @@ const DOCX_MIME =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
 /**
- * Resume upload -> tailorable content. Two paths, both stateless (in-memory,
- * nothing written):
- *   PDF  -> extract plain text (kind: "pdf"); tailoring rebuilds structure.
- *   DOCX -> identify rewordable content lines and echo the original file back as
- *           base64 (kind: "docx"); tailoring rewords in place and re-exports the
- *           same file with formatting intact.
+ * .docx upload -> rewordable content lines (grouped by position) plus the
+ * original file echoed back as base64. Stateless: read into memory, nothing
+ * written. tailour is docx-only so that every export (docx / pdf / json) derives
+ * from the same real file with its formatting intact.
  */
 export async function POST(request: Request) {
   return route(async () => {
     const form = await request.formData().catch(() => null);
     const file = form?.get("file");
     if (!(file instanceof File)) {
-      throw new HttpError("Upload a file under the 'file' field.", 400);
+      throw new HttpError("upload a .docx file.", 400);
     }
     if (file.size > 8 * 1024 * 1024) {
-      throw new HttpError("That file is larger than 8 MB.", 413);
+      throw new HttpError("that file is larger than 8 mb.", 413);
     }
-
     const isDocx =
       file.type === DOCX_MIME || file.name.toLowerCase().endsWith(".docx");
-    const isPdf =
-      file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+    if (!isDocx) {
+      throw new HttpError("please upload a word .docx file.", 415);
+    }
 
     const buffer = Buffer.from(await file.arrayBuffer());
-
-    if (isDocx) {
-      const parsed = await parseDocxResume(buffer);
-      if (parsed.lines.length === 0) {
-        throw new HttpError(
-          "Couldn't find tailorable bullet/summary content in that .docx. Try the PDF or paste path.",
-          422,
-        );
-      }
-      return ok({
-        kind: "docx",
-        fileName: file.name,
-        docxBase64: buffer.toString("base64"),
-        lines: parsed.lines,
-        warnings: parsed.warnings,
-      });
-    }
-
-    if (!isPdf) {
-      throw new HttpError("Upload a PDF or a .docx file.", 415);
-    }
-
-    let text: string;
-    try {
-      const pdf = await getDocumentProxy(new Uint8Array(buffer));
-      const extracted = await extractText(pdf, { mergePages: true });
-      text = Array.isArray(extracted.text)
-        ? extracted.text.join("\n")
-        : extracted.text;
-    } catch {
+    const parsed = await parseDocxResume(buffer);
+    if (parsed.lines.length === 0) {
       throw new HttpError(
-        "Couldn't read text from that PDF. If it's a scanned image, paste the text instead.",
+        "couldn't find tailourable bullet/summary content in that .docx.",
         422,
       );
     }
 
-    const cleaned = text.replace(/ /g, "").trim();
-    if (cleaned.length < 40) {
-      throw new HttpError(
-        "Barely any text came out of that PDF (it may be a scan). Paste the text instead.",
-        422,
-      );
-    }
-    return ok({ kind: "pdf", text: cleaned });
+    return ok({
+      docxBase64: buffer.toString("base64"),
+      lines: parsed.lines,
+      warnings: parsed.warnings,
+    });
   });
 }

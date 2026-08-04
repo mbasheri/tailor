@@ -1,6 +1,6 @@
 import { parseBody, route } from "@/lib/api";
 import { applyDocxEdits } from "@/lib/docx";
-import { exportDocxRequestSchema } from "@/lib/schemas";
+import { docxExportRequestSchema } from "@/lib/schemas";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -15,7 +15,7 @@ const DOCX_MIME =
  */
 export async function POST(request: Request) {
   return route(async () => {
-    const { docxBase64, edits } = await parseBody(request, exportDocxRequestSchema);
+    const { docxBase64, edits } = await parseBody(request, docxExportRequestSchema);
     const original = Buffer.from(docxBase64, "base64");
     const out = await applyDocxEdits(original, edits);
 
@@ -23,7 +23,7 @@ export async function POST(request: Request) {
       status: 200,
       headers: {
         "Content-Type": DOCX_MIME,
-        "Content-Disposition": `attachment; filename="resume-tailored.docx"`,
+        "Content-Disposition": `attachment; filename="resume-tailoured.docx"`,
       },
     });
   });

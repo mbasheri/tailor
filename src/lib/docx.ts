@@ -7,6 +7,7 @@ import {
   type Element,
   type Node,
 } from "@xmldom/xmldom";
+import type { ParsedDocxLine } from "@/lib/schemas";
 
 /**
  * In-place .docx editing. We open the zip, edit the visible text inside existing
@@ -29,13 +30,75 @@ export interface DocxLine {
 }
 
 export interface DocxParseResult {
-  lines: DocxLine[];
+  lines: ParsedDocxLine[];
   paragraphCount: number;
   warnings: string[];
 }
 
 function textContent(node: Node): string {
   return node.textContent ?? "";
+}
+
+/** Ordered tokens (text + tab markers) of a paragraph, so we can read
+ * tab-structured header lines ("Company\tLocation", "Title\tDates"). */
+function paragraphTokens(p: Element): { tab: boolean; text: string }[] {
+  const out: { tab: boolean; text: string }[] = [];
+  const walk = (node: Node) => {
+    for (let i = 0; i < node.childNodes.length; i++) {
+      const c = node.childNodes.item(i);
+      if (!c) continue;
+      // Skip paragraph properties — its <w:tabs> holds tab-STOP definitions,
+      // not the actual tab characters we care about (those live in runs).
+      if (c.nodeName === "w:pPr") continue;
+      if (c.nodeName === "w:t") out.push({ tab: false, text: textContent(c) });
+      else if (c.nodeName === "w:tab") out.push({ tab: true, text: "" });
+      else if (c.nodeName === "w:p" && node !== p) continue; // skip nested paras
+      else if (c.nodeType === 1) walk(c);
+    }
+  };
+  walk(p);
+  return out;
+}
+
+/** Paragraph text with tabs rendered as \t (for readable final text). */
+function paragraphTextTabbed(p: Element): string {
+  return paragraphTokens(p)
+    .map((t) => (t.tab ? "\t" : t.text))
+    .join("");
+}
+
+/** Text before the first tab — the "left" cell of a header line (company/title). */
+function firstSegment(p: Element): string {
+  let s = "";
+  for (const tok of paragraphTokens(p)) {
+    if (tok.tab) break;
+    s += tok.text;
+  }
+  return s.trim();
+}
+
+const SECTION_RE =
+  /^(education|professional experience|work experience|experience|employment(?: history)?|technical skills|skills(?: (?:&|and) additional information)?|core competencies|projects|leadership(?: (?:&|and) involvement)?|involvement|activities|summary|profile|objective|certifications?|licenses?|awards|honou?rs|interests|additional information|publications|volunteer(?:ing| experience)?|references|contact)$/i;
+
+/** A resume section heading — either ALL CAPS, or a known section name (any case). */
+function isSectionHeading(text: string): boolean {
+  const t = text.trim();
+  if (t.length > 50) return false;
+  if (/^[A-Z][A-Z &/,'.-]{2,44}$/.test(t)) return true;
+  return SECTION_RE.test(t);
+}
+
+function isContactLine(text: string): boolean {
+  return (
+    /[\w.+-]+@[\w.-]+\.\w+/.test(text) ||
+    /\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/.test(text)
+  );
+}
+
+/** "title — company" from the block's first (org) and last (role) header. */
+function deriveGroup(org: string, title: string): string {
+  if (org && title && org !== title) return `${title} — ${org}`;
+  return title || org;
 }
 
 /** All <w:t> descendants of a paragraph, in document order. */
@@ -139,25 +202,83 @@ export async function parseDocxResume(buffer: Buffer): Promise<DocxParseResult> 
   const docXml = await zip.file(DOC_PART)!.async("string");
   if (docXml.includes("<w:tbl>")) {
     warnings.push(
-      "This resume uses tables. Content inside table cells may not be reliably tailored.",
+      "This resume uses tables. Content inside table cells may not be reliably tailoured.",
     );
   }
   if (docXml.includes("<w:txbxContent")) {
     warnings.push(
-      "This resume uses text boxes. Text inside them will not be tailored.",
+      "This resume uses text boxes. Text inside them will not be tailoured.",
     );
   }
 
   const paragraphs = allParagraphs(doc);
-  const lines: DocxLine[] = [];
+  const lines: ParsedDocxLine[] = [];
+
+  // Walk in order, tracking the current position header so each rewordable line
+  // can be grouped by the job it sits under. Within a header block the FIRST
+  // line is usually the org/company and the LAST is the role/title.
+  let orgLine = "";
+  let titleLine = "";
+  let prevWasBullet = false;
+
   paragraphs.forEach((p, i) => {
-    const text = paragraphText(p);
-    if (isRewordable(text, hasNumbering(p), hasTab(p))) {
-      lines.push({ id: `p${i}`, text: text.trim() });
+    const raw = paragraphText(p).trim();
+    if (!raw) return;
+
+    if (isRewordable(raw, hasNumbering(p), hasTab(p))) {
+      lines.push({
+        id: `p${i}`,
+        text: raw,
+        group: deriveGroup(orgLine, titleLine),
+      });
+      prevWasBullet = true;
+      return;
     }
+
+    if (isSectionHeading(raw) || isContactLine(raw)) {
+      orgLine = "";
+      titleLine = "";
+      prevWasBullet = false;
+      return;
+    }
+
+    // A non-rewordable, non-heading line = an entry header (company / title).
+    const seg = firstSegment(p) || raw;
+    if (prevWasBullet) {
+      orgLine = seg; // a new header block after a run of bullets
+      titleLine = seg;
+    } else {
+      if (!orgLine) orgLine = seg;
+      titleLine = seg;
+    }
+    prevWasBullet = false;
   });
 
   return { lines, paragraphCount: paragraphs.length, warnings };
+}
+
+/**
+ * The full tailoured resume text: every paragraph in order, with reworded lines
+ * substituted for their originals and tab-structured headers preserved. Used to
+ * build the structured JSON from the SAME content as the exported document.
+ */
+export async function buildFinalText(
+  buffer: Buffer,
+  edits: DocxLine[],
+): Promise<string> {
+  const { doc } = await loadDoc(buffer);
+  const editMap = new Map(edits.map((e) => [e.id, e.text]));
+  const paragraphs = allParagraphs(doc);
+  const out: string[] = [];
+  paragraphs.forEach((p, i) => {
+    const edit = editMap.get(`p${i}`);
+    out.push(edit !== undefined ? edit : paragraphTextTabbed(p));
+  });
+  return out
+    .join("\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 function isGlyphOnly(t: Element): boolean {

@@ -1,69 +1,74 @@
-# Tailor — we alter to perfection
+# tailour — we alter, you apply
 
-A single-page, stateless tool: upload your resume and paste a job posting, and
-Tailor rewords your resume to match the role — **preserving your resume's own
-section order, headings, and structure** and only rewording the content within
-it, never inventing experience. Review, edit, export a PDF.
+a single-page, stateless tool: upload your resume `.docx` and a job posting, and
+tailour rewords your bullets to match the role **in place inside your own file**,
+so every style, font, and layout stays exactly as you had it. review the changes,
+edit anything, and download.
 
-**Nothing is stored.** No accounts, no login, no database. Each visit is a fresh
-session: upload your resume, get one tailored result, download it, done.
+**nothing is stored.** no accounts, no login, no database. each visit is a fresh
+session — nothing is retained after you close the page.
 
-## How it works
+## how it works
 
 ```
-Your resume    upload a PDF (text extracted locally)  OR  paste text
-Job posting    paste text  OR  paste a URL → best-effort auto-pull
-   → Tailor    Gemini extracts your resume's structure (section order,
-               headings, entry grouping) and rewords bullets to fit the role
-   → Review    edit anything; the skeleton stays yours
-   → Export    a PDF that follows your resume's structure
+resume       upload a .docx (docx-only, so formatting is preserved)
+job posting  paste text  OR  paste a url → best-effort auto-pull
+  → tailour  gemini rewords only the bullet/prose runs to fit the job;
+             headers, dates, contact and formatting are never touched
+  → review   changes grouped by position, original struck through above the new line
+  → export   download docx / pdf / json
 ```
 
-### Structure preservation (and its honest limits)
+### three exports, one source of truth
 
-Tailor extracts the **structure** of your uploaded resume — the order of
-sections, the section headings you used, and which bullets belong to which
-entry — and preserves it. Only the wording of existing bullets is reworded and
-reordered to match the posting.
+all three are derived from the **same** reworded document + your edits, so they
+always agree:
 
-What it does **not** do: reproduce the exact visual layout of your original PDF
-(fonts, multi-column layouts, bold-word patterns, precise spacing). Extracted
-PDF text does not carry that layout reliably, so the export re-renders your
-preserved structure in one clean, consistent, ATS-safe single-column layout.
-See `src/lib/gemini.ts` for the extraction prompt.
+- **docx** — the original file with only the bullet text changed. formatting is
+  byte-identical to your upload (styles/numbering/fonts untouched).
+- **pdf** — the reworded docx converted server-side (mammoth → html → headless
+  chromium). see the fidelity note below.
+- **json** — a structured object (`name`, `email`, `phone`, `location`,
+  `summary`, `skills`, `experience[]`, `education[]`, `certifications`) built
+  from the same tailoured text, generic enough for a future ATS auto-fill flow.
 
-### Privacy: contact info never leaves your machine
+### pdf fidelity — honest trade-off
 
-Before anything is sent to the model, your **name, email, phone, and profile
-links are stripped locally** (`src/lib/contact.ts`) and replaced with
-placeholders. The real contact block is re-attached locally afterward.
+a Word-accurate render needs a Word/LibreOffice engine, which isn't viable inside
+a Vercel serverless function (binary size / memory / cold-start). so the pdf is
+produced with `mammoth` (docx → clean semantic html) + `@sparticuz/chromium` +
+`puppeteer-core`. this preserves content, order, bold/italic and bullet
+structure, but does **not** reproduce Word's exact tab stops (right-aligned
+dates), precise spacing, or the original font — it's a close approximation, not
+pixel-identical. the **docx** download is the fully faithful output; the pdf is a
+convenience. (see `src/lib/pdf.ts`.)
 
-### Anti-fabrication
+### privacy
 
-The model only rephrases and reorders your real content — never inventing
-employers, metrics, tools, or responsibilities. Output is validated with Zod
-before rendering, and you review it before exporting.
+your name, email, phone and profile links are never sent to the model — the
+reword step only ever sees bullet/prose lines, and the json step extracts contact
+fields locally (`src/lib/contact.ts`) before anything is sent.
 
-## Stack
+## stack
 
-- **Next.js 16** (App Router) + TypeScript, Tailwind CSS v4
-- **Google Gemini** (`gemini-flash-latest`) via `@google/genai`, structured output
-- **unpdf** for serverless-safe PDF text extraction
-- **cheerio** for best-effort job-posting URL extraction
-- **@react-pdf/renderer** for the ATS-safe PDF
+- **next.js 16** (app router) + typescript, tailwind css v4
+- **google gemini** (`gemini-flash-latest`) via `@google/genai`, free tier
+- **jszip + @xmldom/xmldom** for in-place docx editing
+- **mammoth + puppeteer-core + @sparticuz/chromium** for docx → pdf
+- **cheerio** for best-effort job-posting url extraction
 
-No database, no file storage — every route is stateless.
+## routes
 
-## Routes
-
-| Route | Does |
+| route | does |
 |---|---|
-| `POST /api/fetch-job` | URL → clean job-description text, graceful fallback to manual paste |
-| `POST /api/parse-resume` | uploaded PDF → plain text (in-memory, nothing stored) |
-| `POST /api/tailor` | `{ jobText, resumeText }` → `{ roleType, conventions[], resume, changeNotes[] }` |
-| `POST /api/export-pdf` | `{ resume }` → streams a PDF |
+| `POST /api/parse-resume` | `.docx` → rewordable lines (grouped by position) + the file, base64 |
+| `POST /api/fetch-job` | url → clean job-description text, graceful fallback |
+| `POST /api/tailour-docx` | `{ jobText, lines }` → reworded lines (same ids) |
+| `POST /api/export-docx` | `{ docxBase64, edits }` → reworded `.docx` |
+| `POST /api/export-pdf` | `{ docxBase64, edits }` → reworded `.docx` converted to pdf |
+| `POST /api/structure-json` | `{ docxBase64, edits }` → structured resume json |
 
-## Local setup
+## local setup
 
 ```bash
 npm install
@@ -71,16 +76,26 @@ cp .env.example .env      # add your GEMINI_API_KEY
 npm run dev
 ```
 
-Get a free key from [Google AI Studio](https://aistudio.google.com/apikey).
-Only one env var is required: `GEMINI_API_KEY` (optionally `GEMINI_MODEL`).
+get a free key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey).
+required env: `GEMINI_API_KEY`. optional: `GEMINI_MODEL`, `LOCAL_CHROME_PATH`
+(path to a Chrome/Chromium binary for local pdf export; defaults to the standard
+macOS Chrome path).
 
-## Deploy to Vercel
+## deploy to vercel
 
-1. Push the repo and import it into Vercel.
-2. Add `GEMINI_API_KEY` in **Project Settings → Environment Variables**.
-3. Deploy. Routes run on Vercel's Node runtime; no database or storage to provision.
+1. push the repo and import it into vercel.
+2. add `GEMINI_API_KEY` in **project settings → environment variables**.
+3. deploy. routes run on the node runtime; pdf export uses `@sparticuz/chromium`
+   automatically when `VERCEL` is set (no local chrome needed in production).
 
-## Non-goals
+> **note on the deployment name/slug:** renaming this app to *tailour* does not
+> automatically rename an existing Vercel project slug or `*.vercel.app` domain —
+> changing those changes the live URL. that's a separate decision: rename the
+> Vercel project (and/or add a custom domain) in the dashboard if you want the
+> URL to say `tailour`, or leave the existing URL as-is. the code, package name,
+> and UI are all `tailour` regardless.
 
-No auto-apply, no form-filling, no job-board submission, no stored credentials,
-and no scraping behind login walls or bot detection.
+## non-goals
+
+no auto-apply, no form-filling, no job-board submission, no stored credentials,
+no scraping behind login walls. paid apis are avoided (gemini free tier only).

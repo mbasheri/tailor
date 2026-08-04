@@ -1,16 +1,16 @@
 import type { Metadata } from "next";
-import { Space_Grotesk } from "next/font/google";
+import { Inter } from "next/font/google";
 import "./globals.css";
 
-const spaceGrotesk = Space_Grotesk({
+const inter = Inter({
   variable: "--font-sans-var",
   subsets: ["latin"],
 });
 
 export const metadata: Metadata = {
-  title: "Tailor — we alter to perfection",
+  title: "tailour — we alter, you apply",
   description:
-    "Upload your resume and a job posting; get a reworded, structure-preserving PDF. Nothing saved.",
+    "upload your resume and a job posting; get a reworded resume with your formatting kept exactly. nothing saved.",
 };
 
 export default function RootLayout({
@@ -19,9 +19,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${spaceGrotesk.variable} h-full antialiased`}>
+    <html lang="en" className={`${inter.variable} h-full antialiased`}>
       <body className="min-h-full">
-        <main className="w-full max-w-[720px] mx-auto px-5 py-14">
+        <main className="w-full max-w-[680px] mx-auto px-5 py-16 sm:py-20">
           {children}
         </main>
       </body>

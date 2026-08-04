@@ -1,35 +1,29 @@
 import { parseBody, route } from "@/lib/api";
-import { renderResumePdf } from "@/lib/pdf/documents";
-import { exportPdfRequestSchema } from "@/lib/schemas";
+import { applyDocxEdits } from "@/lib/docx";
+import { renderDocxToPdf } from "@/lib/pdf";
+import { docxExportRequestSchema } from "@/lib/schemas";
 
 export const runtime = "nodejs";
-export const maxDuration = 30;
-
-function slugify(value: string) {
-  return (
-    value
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 60) || "resume"
-  );
-}
+// Headless Chromium cold-starts can be slow; give it room.
+export const maxDuration = 60;
 
 /**
- * Renders the (possibly user-edited) resume to a single-page ATS-safe PDF and
- * streams it straight back for download. No Blob, no storage.
+ * pdf export, built ON TOP OF the reworded .docx (not a separate template):
+ * apply the same edits to the original file, then convert that exact document to
+ * pdf. Same content and formatting source as the .docx download. Stateless.
  */
 export async function POST(request: Request) {
   return route(async () => {
-    const { resume } = await parseBody(request, exportPdfRequestSchema);
-    const buffer = await renderResumePdf(resume);
-    const filename = `${slugify(resume.contact.name || "resume")}-tailored.pdf`;
+    const { docxBase64, edits } = await parseBody(request, docxExportRequestSchema);
+    const original = Buffer.from(docxBase64, "base64");
+    const reworded = await applyDocxEdits(original, edits);
+    const pdf = await renderDocxToPdf(reworded);
 
-    return new Response(new Uint8Array(buffer), {
+    return new Response(new Uint8Array(pdf), {
       status: 200,
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="${filename}"`,
+        "Content-Disposition": `attachment; filename="resume-tailoured.pdf"`,
       },
     });
   });

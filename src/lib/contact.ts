@@ -3,7 +3,7 @@ import type { Contact } from "@/lib/schemas";
 /**
  * Privacy option (b): pull the directly-identifying contact details out of the
  * raw resume text locally, and redact them before anything is sent to Gemini.
- * The model tailors only the experience/skills/education; we re-attach the real
+ * The model tailours only the experience/skills/education; we re-attach the real
  * contact block afterward. The model never sees the name, email, phone, or
  * profile URLs.
  */
