@@ -8,8 +8,8 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 /**
- * Builds the structured JSON from the SAME tailoured content as the docx/pdf
- * exports: reconstruct the final resume text (original + the same edits), pull
+ * Builds the structured JSON from the SAME tailoured content as the docx
+ * export: reconstruct the final resume text (original + the same edits), pull
  * contact fields out LOCALLY (never sent to the model), and ask the model to
  * organize the remaining, already-tailoured text into fields. Per-request,
  * returned to the client, never stored.

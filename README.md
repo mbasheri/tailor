@@ -16,32 +16,23 @@ job posting  paste text  OR  paste a url → best-effort auto-pull
   → tailour  gemini rewords only the bullet/prose runs to fit the job;
              headers, dates, contact and formatting are never touched
   → review   changes grouped by position, original struck through above the new line
-  → export   download docx / pdf / json
+  → export   download your reworded .docx (json also available)
 ```
 
-### three exports, one source of truth
+### the output: your .docx
 
-all three are derived from the **same** reworded document + your edits, so they
-always agree:
+the download is your **original file with only the bullet text changed** —
+formatting is byte-identical to your upload (styles/numbering/fonts untouched).
+this is the faithful, primary output. if you want a pdf, open the .docx in Word
+or Google Docs and export it yourself — that's a couple of seconds and gives you
+a perfect, engine-accurate pdf, which is why tailour doesn't ship a pdf converter.
 
-- **docx** — the original file with only the bullet text changed. formatting is
-  byte-identical to your upload (styles/numbering/fonts untouched).
-- **pdf** — the reworded docx converted server-side (mammoth → html → headless
-  chromium). see the fidelity note below.
-- **json** — a structured object (`name`, `email`, `phone`, `location`,
-  `summary`, `skills`, `experience[]`, `education[]`, `certifications`) built
-  from the same tailoured text, generic enough for a future ATS auto-fill flow.
+### json (a small extra)
 
-### pdf fidelity — honest trade-off
-
-a Word-accurate render needs a Word/LibreOffice engine, which isn't viable inside
-a Vercel serverless function (binary size / memory / cold-start). so the pdf is
-produced with `mammoth` (docx → clean semantic html) + `@sparticuz/chromium` +
-`puppeteer-core`. this preserves content, order, bold/italic and bullet
-structure, but does **not** reproduce Word's exact tab stops (right-aligned
-dates), precise spacing, or the original font — it's a close approximation, not
-pixel-identical. the **docx** download is the fully faithful output; the pdf is a
-convenience. (see `src/lib/pdf.ts`.)
+a structured object (`name`, `email`, `phone`, `location`, `summary`, `skills`,
+`experience[]`, `education[]`, `certifications`) built from the **same** tailoured
+text, generic enough for a future ATS auto-fill flow. it always agrees with the
+.docx because both derive from the same file plus the same edits.
 
 ### privacy
 
@@ -54,7 +45,6 @@ fields locally (`src/lib/contact.ts`) before anything is sent.
 - **next.js 16** (app router) + typescript, tailwind css v4
 - **google gemini** (`gemini-flash-latest`) via `@google/genai`, free tier
 - **jszip + @xmldom/xmldom** for in-place docx editing
-- **mammoth + puppeteer-core + @sparticuz/chromium** for docx → pdf
 - **cheerio** for best-effort job-posting url extraction
 
 ## routes
@@ -65,7 +55,6 @@ fields locally (`src/lib/contact.ts`) before anything is sent.
 | `POST /api/fetch-job` | url → clean job-description text, graceful fallback |
 | `POST /api/tailour-docx` | `{ jobText, lines }` → reworded lines (same ids) |
 | `POST /api/export-docx` | `{ docxBase64, edits }` → reworded `.docx` |
-| `POST /api/export-pdf` | `{ docxBase64, edits }` → reworded `.docx` converted to pdf |
 | `POST /api/structure-json` | `{ docxBase64, edits }` → structured resume json |
 
 ## local setup
@@ -77,16 +66,13 @@ npm run dev
 ```
 
 get a free key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey).
-required env: `GEMINI_API_KEY`. optional: `GEMINI_MODEL`, `LOCAL_CHROME_PATH`
-(path to a Chrome/Chromium binary for local pdf export; defaults to the standard
-macOS Chrome path).
+required env: `GEMINI_API_KEY`. optional: `GEMINI_MODEL`.
 
 ## deploy to vercel
 
 1. push the repo and import it into vercel.
 2. add `GEMINI_API_KEY` in **project settings → environment variables**.
-3. deploy. routes run on the node runtime; pdf export uses `@sparticuz/chromium`
-   automatically when `VERCEL` is set (no local chrome needed in production).
+3. deploy. all routes run on the node runtime; no binaries or extra services.
 
 > **note on the deployment name/slug:** renaming this app to *tailour* does not
 > automatically rename an existing Vercel project slug or `*.vercel.app` domain —

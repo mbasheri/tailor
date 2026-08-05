@@ -140,7 +140,7 @@ body {
     line-height: 1.4;
     resize: none;
     overflow: hidden;
-    field-sizing: content; /* auto-height in Chromium; min-height covers others */
+    field-sizing: content; /* auto-height where supported; min-height covers the rest */
     min-height: 1.4em;
   }
   .diff-line:focus {

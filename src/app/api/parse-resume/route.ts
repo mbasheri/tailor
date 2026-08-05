@@ -10,8 +10,8 @@ const DOCX_MIME =
 /**
  * .docx upload -> rewordable content lines (grouped by position) plus the
  * original file echoed back as base64. Stateless: read into memory, nothing
- * written. tailour is docx-only so that every export (docx / pdf / json) derives
- * from the same real file with its formatting intact.
+ * written. tailour is docx-only so the export (docx, and a json view of the same
+ * content) derives from the real file with its formatting intact.
  */
 export async function POST(request: Request) {
   return route(async () => {

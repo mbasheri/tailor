@@ -99,8 +99,8 @@ export const tailourDocxRequestSchema = z.object({
   lines: z.array(docxLineSchema).min(1, "no tailourable content found"),
 });
 
-/** Used by both the docx and pdf exports, and by the json builder — all derive
- * from the same original file plus the same edits, so outputs always agree. */
+/** Used by the docx export and the json builder — both derive from the same
+ * original file plus the same edits, so the outputs always agree. */
 export const docxExportRequestSchema = z.object({
   docxBase64: z.string().min(1),
   edits: z.array(docxLineSchema),

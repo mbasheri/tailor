@@ -24,7 +24,7 @@ interface FetchJobResponse {
   description?: string;
 }
 
-type ExportKind = "docx" | "pdf" | "json";
+type ExportKind = "docx" | "json";
 
 export function TailourApp() {
   const [docx, setDocx] = useState<DocxState | null>(null);
@@ -151,17 +151,15 @@ export function TailourApp() {
           "resume-tailoured.json",
         );
       } else {
-        const url = kind === "docx" ? "/api/export-docx" : "/api/export-pdf";
-        const res = await fetch(url, {
+        const res = await fetch("/api/export-docx", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
         if (!res.ok) {
           // read a json error message if there is one; otherwise surface the
-          // status/body so failures are never silent (e.g. a 504 timeout or a
-          // platform 500 that returns html, not json).
-          let msg = `${kind} export failed (${res.status})`;
+          // status/body so failures are never silent.
+          let msg = `docx export failed (${res.status})`;
           const raw = await res.text().catch(() => "");
           try {
             const parsed = raw ? JSON.parse(raw) : null;
@@ -173,12 +171,9 @@ export function TailourApp() {
         }
         const blob = await res.blob();
         if (blob.size === 0) {
-          throw new Error(`${kind} export came back empty — the server produced no file.`);
+          throw new Error("docx export came back empty — the server produced no file.");
         }
-        triggerDownload(
-          blob,
-          kind === "docx" ? "resume-tailoured.docx" : "resume-tailoured.pdf",
-        );
+        triggerDownload(blob, "resume-tailoured.docx");
       }
     } catch (err) {
       setExportError(err instanceof Error ? err.message : `${kind} export failed`);
@@ -361,31 +356,25 @@ export function TailourApp() {
             </div>
           )}
 
-          {/* exports */}
-          <div className="pt-2 space-y-2">
-            <div className="flex flex-wrap gap-2">
-              <button
-                onClick={() => downloadBlob("docx")}
-                disabled={!!exporting}
-                className="btn btn-primary"
-              >
-                {exporting === "docx" ? <Spinner /> : "download docx"}
-              </button>
-              <button
-                onClick={() => downloadBlob("pdf")}
-                disabled={!!exporting}
-                className="btn"
-              >
-                {exporting === "pdf" ? <Spinner /> : "download pdf"}
-              </button>
+          {/* export — the docx is the output; json is a small extra */}
+          <div className="pt-2 space-y-3">
+            <button
+              onClick={() => downloadBlob("docx")}
+              disabled={!!exporting}
+              className="btn btn-primary w-full"
+            >
+              {exporting === "docx" ? <Spinner /> : "download your resume (.docx)"}
+            </button>
+            <p className="text-xs text-muted text-center">
+              your reworded resume, formatting kept exactly.{" "}
               <button
                 onClick={() => downloadBlob("json")}
                 disabled={!!exporting}
-                className="btn"
+                className="underline hover:text-black disabled:no-underline"
               >
-                {exporting === "json" ? <Spinner /> : "download json"}
+                {exporting === "json" ? "preparing…" : "or download json"}
               </button>
-            </div>
+            </p>
             {exportError ? (
               <div className="border border-black px-3 py-2 text-sm rounded-[3px]">
                 {exportError}
