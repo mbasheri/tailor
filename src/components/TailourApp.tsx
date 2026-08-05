@@ -44,6 +44,7 @@ export function TailourApp() {
   const [result, setResult] = useState<Result | null>(null);
   const [exporting, setExporting] = useState<ExportKind | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
   const resultRef = useRef<HTMLDivElement>(null);
 
   async function onFile(file: File | undefined) {
@@ -140,6 +141,7 @@ export function TailourApp() {
     if (!docx || !result) return;
     setExporting(kind);
     setError(null);
+    setExportError(null);
     try {
       const payload = { docxBase64: docx.base64, edits: result.lines };
       if (kind === "json") {
@@ -156,16 +158,30 @@ export function TailourApp() {
           body: JSON.stringify(payload),
         });
         if (!res.ok) {
-          const body = await res.json().catch(() => null);
-          throw new Error(body?.error ?? `export failed (${res.status})`);
+          // read a json error message if there is one; otherwise surface the
+          // status/body so failures are never silent (e.g. a 504 timeout or a
+          // platform 500 that returns html, not json).
+          let msg = `${kind} export failed (${res.status})`;
+          const raw = await res.text().catch(() => "");
+          try {
+            const parsed = raw ? JSON.parse(raw) : null;
+            if (parsed?.error) msg = parsed.error;
+          } catch {
+            if (raw) msg = `${msg}: ${raw.slice(0, 200)}`;
+          }
+          throw new Error(msg);
+        }
+        const blob = await res.blob();
+        if (blob.size === 0) {
+          throw new Error(`${kind} export came back empty — the server produced no file.`);
         }
         triggerDownload(
-          await res.blob(),
+          blob,
           kind === "docx" ? "resume-tailoured.docx" : "resume-tailoured.pdf",
         );
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "export failed");
+      setExportError(err instanceof Error ? err.message : `${kind} export failed`);
     } finally {
       setExporting(null);
     }
@@ -346,28 +362,35 @@ export function TailourApp() {
           )}
 
           {/* exports */}
-          <div className="flex flex-wrap gap-2 pt-2">
-            <button
-              onClick={() => downloadBlob("docx")}
-              disabled={!!exporting}
-              className="btn btn-primary"
-            >
-              {exporting === "docx" ? <Spinner /> : "download docx"}
-            </button>
-            <button
-              onClick={() => downloadBlob("pdf")}
-              disabled={!!exporting}
-              className="btn"
-            >
-              {exporting === "pdf" ? <Spinner /> : "download pdf"}
-            </button>
-            <button
-              onClick={() => downloadBlob("json")}
-              disabled={!!exporting}
-              className="btn"
-            >
-              {exporting === "json" ? <Spinner /> : "download json"}
-            </button>
+          <div className="pt-2 space-y-2">
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => downloadBlob("docx")}
+                disabled={!!exporting}
+                className="btn btn-primary"
+              >
+                {exporting === "docx" ? <Spinner /> : "download docx"}
+              </button>
+              <button
+                onClick={() => downloadBlob("pdf")}
+                disabled={!!exporting}
+                className="btn"
+              >
+                {exporting === "pdf" ? <Spinner /> : "download pdf"}
+              </button>
+              <button
+                onClick={() => downloadBlob("json")}
+                disabled={!!exporting}
+                className="btn"
+              >
+                {exporting === "json" ? <Spinner /> : "download json"}
+              </button>
+            </div>
+            {exportError ? (
+              <div className="border border-black px-3 py-2 text-sm rounded-[3px]">
+                {exportError}
+              </div>
+            ) : null}
           </div>
         </div>
       ) : null}
